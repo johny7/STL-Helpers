@@ -1,19 +1,48 @@
-#ifndef LINQ_H_INCLUDED
-#define LINQ_H_INCLUDED
+#pragma once
 
 #include <vector>
 #include <set>
-#include "types/macroses.h"
+#include <map>
 
-#if defined _DEBUG && !defined NDEBUG
-#define NDEBUG
-#endif
+//	define your ASSERT macro
+
+//
+//	LINQ in C++
+//
+//	Usage sample:
+//	std::vector<std::string>	v;
+//	for( size_t val :
+//		LINQ(v)
+//		.Select([](const std::string& val) { return val.length(); })
+//		.Where([](size_t val) { return val == 2; })
+//		.Skip(1)
+//	) { .. }
+//
+//	Supported containers:
+//		* map
+//		* vector
+//		* list
+//		* arr[]
+//		* abstract generator LINQRange[begin, end)
+//
+//	Supported transformers:
+//		* Sequence Select(const F& transform)			//	Transforms sequence of val into sequence of transform(val)
+//		* Sequence Where(const F& predicate)			//	Filters by predicate
+//		* bool     Any(const F& predicate)				//	Evaluates if any element in sequence fits predicate
+//		* int      Count(const F& functor)				//	Evaluates number of elements in sequence that fits predicate
+//		* Sequence Take(int num)						//	Trims only first 'num' elements out of sequence
+//		* Sequence Skip(int num)						//	Safely skips first 'num' elements
+//		* Element  First()								//	Extracts first element of the sequence. Will ASSERT if empty.
+//		* Keys Sequence of Sequence	GroupSortedBy(f)	//	Groups elements by key (in sorted sequence) and returns keys sequence that evaluates into
+//														//		sequence of original elements with the same key.
+//		* T			Aggregate(init, functor)			//	Evaluates sequence using initial value and wrapping functor
+//		* vector<El> ToVector()							//	Converts sequence into std::vector
+//
+//
 
 
 template<typename ParentT, typename ResultType>
 struct LINQSequence;
-
-
 
 template<typename SeqT, typename F>
 struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>, decltype( (*(F*)NULL)	( **(SeqT*)NULL ))	>
@@ -31,7 +60,7 @@ struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>, decltype( (*(F*)NULL)	( *
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return seq.IsEmpty(); }
 	void operator++() { ++seq; }
-	ResultType operator*() { return functor(*seq); }
+	ResultType operator*() const { return functor(*seq); }
 };
 
 template<typename SeqT, typename F>
@@ -58,7 +87,7 @@ struct LINQWhere : LINQSequence < LINQWhere<SeqT, F>, typename SeqT::ResultType 
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return seq.IsEmpty(); }
 	void operator++() { ++seq; JumpToNextValidEntry(); }
-	ResultType operator*() { return *seq; }
+	ResultType operator*() const { return *seq; }
 };
 
 template<typename SeqT>
@@ -78,7 +107,7 @@ struct LINQTake : LINQSequence < LINQTake<SeqT>, typename SeqT::ResultType >
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return idx < num || num <= 0 || seq.IsEmpty(); }
 	void operator++() { ++idx; ++seq; }
-	ResultType operator*() { return *seq; }
+	ResultType operator*() const { return *seq; }
 };
 
 
@@ -98,7 +127,7 @@ struct LINQIdFilter : LINQSequence < LINQIdFilter<SeqT, F>, typename SeqT::Resul
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return seq.IsEmpty() || idExtractor(*seq) != key; }
 	void operator++() { ++seq; }
-	ResultType operator*() { return *seq; }
+	ResultType operator*() const { return *seq; }
 };
 
 
@@ -125,7 +154,7 @@ struct LINQGroupSortedBy : LINQSequence < LINQGroupSortedBy<SeqT, F>, LINQIdFilt
 		if (!seq.IsEmpty())
 			key = idExtractor(*seq);
 	}
-	ResultType operator*() { return LINQIdFilter<SeqT, F>(seq, key, idExtractor); }
+	ResultType operator*() const { return LINQIdFilter<SeqT, F>(seq, key, idExtractor); }
 };
 
 
@@ -136,8 +165,7 @@ struct LINQSequence
 	//	Interface contract: every descendant class should implement these methods:
 //	 bool IsEmpty() const;
 //	 void operator++();
-//	 ResultType operator*();
-
+//	 ResultType operator*() const;
 
 	typedef LINQSequence<ParentT, ResultType>	MyType;
 
@@ -182,7 +210,7 @@ struct LINQSequence
 	}
 
 
-	std::vector<ResultType> ToList()
+	std::vector<ResultType> ToVector()
 	{
 		std::vector<ResultType> list;
 
@@ -196,17 +224,23 @@ struct LINQSequence
 		return list;
 	}
 
-	
 	//	for each friendly
 	struct RefType
 	{
+		using iterator_category = std::forward_iterator_tag;
+		using value_type = std::remove_cv_t<std::remove_reference_t<ResultType>>;
+		using difference_type = std::ptrdiff_t;
+		using pointer = const value_type * ;
+		using reference = ResultType;
+
 		RefType(MyType& me) : me(me)
 		{}
 
 		bool operator==(const RefType& ) const { return static_cast<ParentT&>(me).IsEmpty(); }
 		bool operator!=(const RefType& ) const { return !static_cast<ParentT&>(me).IsEmpty(); }
 		void operator++() { ++static_cast<ParentT&>(me); }
-		ResultType operator*() { return *static_cast<ParentT&>(me); }
+		reference operator*() const { return *static_cast<const ParentT&>(me); }
+		pointer operator->() const { return &*static_cast<const ParentT&>(me); }
 
 		MyType& me;
 	};
@@ -214,6 +248,10 @@ struct LINQSequence
 	//	for each friendly
 	RefType begin() { return RefType(*this); }
 	RefType end() { return RefType(*this); }
+
+	using iterator = RefType;
+	using const_iterator = RefType;
+	using value_type = std::remove_cv_t<std::remove_reference_t<ResultType>>;
 };
 
 
@@ -238,7 +276,7 @@ struct LINQ_GenSeq : LINQSequence < LINQ_GenSeq<SeqT>, SeqT >
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return cur == end_; }
 	void operator++() { ++cur; }
-	ResultType operator*() { return cur; }
+	ResultType operator*() const { return cur; }
 };
 
 template<typename T>
@@ -267,7 +305,7 @@ struct LINQ_vector : LINQSequence<LINQ_vector<T>, const T&>
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return it == list.end(); }
 	void operator++() { ++it; }
-	ResultType operator*() { return *it; }
+	ResultType operator*() const { return *it; }
 };
 
 
@@ -298,7 +336,7 @@ struct LINQ_set : LINQSequence<LINQ_set<T,L,A>, const T&>
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return it == list.end(); }
 	void operator++() { ++it; }
-	ResultType operator*() { return *it; }
+	ResultType operator*() const { return *it; }
 };
 
 
@@ -310,6 +348,34 @@ LINQ_set<T,L,A>	LINQ(const std::set<T,L,A>& list)
 
 
 
+
+//////////////////////////////////////////////////////////////////////////
+//	Map
+
+template<typename K, typename V, typename PR, typename A>
+struct LINQ_map : LINQSequence<LINQ_map<K, V, PR, A>, const std::pair<const K,V>&>
+{
+	typedef const std::pair<const K,V>& ResultType;
+
+	const std::map<K, V, PR, A>& map;
+	typename std::map<K, V, PR, A>::const_iterator it;
+
+	LINQ_map(const std::map<K, V, PR, A>& map) : map(map)
+	{
+		it = map.begin();
+	}
+
+	//	Contract for LINQSequence
+	bool IsEmpty() const { return it == map.end(); }
+	void operator++() { ++it; }
+	ResultType operator*() const { return *it; }
+};
+
+template<typename K, typename V, typename PR, typename A>
+LINQ_map<K, V, PR, A>	LINQ(const std::map<K, V, PR, A>& map)
+{
+	return LINQ_map<K, V, PR, A>(map);
+}
 
 
 
@@ -332,7 +398,7 @@ struct LINQ_array : LINQSequence<LINQ_array<T, N>, const T&>
 	//	Contract for LINQSequence
 	bool IsEmpty() const { return idx == N; }
 	void operator++() { ++idx; }
-	ResultType operator*() { return arr[idx]; }
+	ResultType operator*() const { return arr[idx]; }
 };
 
 
@@ -342,5 +408,93 @@ LINQ_array<T, N>	LINQ(const T (&arr)[N])
 	return LINQ_array<T, N>(arr);
 }
 
-#endif	// LINQ_H_INCLUDED
+
+//////////////////////////////////////////////////////////////////////////
+//	Select 1st & 2nd wrappers
+
+namespace alg { namespace Details
+{
+template<typename CONT, typename IT> struct Select1stIt;
+template<typename CONT, typename IT> struct Select2ndIt;
+template<typename CONT, typename MEM_PTR, typename VALUE_TYPE> struct SelectMemberIt;
+}}
+
+template<typename CONT, typename IT>
+struct LINQ_Select2nd : LINQSequence<LINQ_Select2nd<CONT, IT>, typename const alg::Details::Select2ndIt<CONT, IT>::value_type&>
+{
+	typedef typename const alg::Details::Select2ndIt<CONT, IT>::value_type& ResultType;
+
+	const alg::Details::Select2ndIt<CONT, IT>& cont;
+	typename alg::Details::Select2ndIt<CONT, IT>::const_iterator it;
+
+	LINQ_Select2nd(const alg::Details::Select2ndIt<CONT, IT>& cont)
+		: cont(cont), it(cont.begin())
+	{}
+
+	//	Contract for LINQSequence
+	bool IsEmpty() const { return it == cont.end(); }
+	void operator++() { ++it; }
+	ResultType operator*() const { return *it; }
+};
+
+
+template<typename CONT, typename IT>
+auto LINQ(const alg::Details::Select2ndIt<CONT, IT>& cont)
+{
+	return LINQ_Select2nd<CONT, IT>(cont);
+}
+
+
+template<typename CONT, typename IT>
+struct LINQ_Select1st : LINQSequence<LINQ_Select1st<CONT, IT>, typename const alg::Details::Select1stIt<CONT, IT>::value_type&>
+{
+	typedef typename const alg::Details::Select1stIt<CONT, IT>::value_type& ResultType;
+
+	const alg::Details::Select1stIt<CONT, IT>& cont;
+	typename alg::Details::Select1stIt<CONT, IT>::const_iterator it;
+
+	LINQ_Select1st(const alg::Details::Select1stIt<CONT, IT>& cont)
+		: cont(cont), it(cont.begin())
+	{}
+
+	//	Contract for LINQSequence
+	bool IsEmpty() const { return it == cont.end(); }
+	void operator++() { ++it; }
+	ResultType operator*() const { return *it; }
+};
+
+
+template<typename CONT, typename IT>
+auto LINQ(const alg::Details::Select1stIt<CONT, IT>& cont)
+{
+	return LINQ_Select1st<CONT, IT>(cont);
+}
+
+
+
+template<typename CONT, typename MEM_PTR, typename VALUE_TYPE>
+struct LINQ_SelectMemberIt : LINQSequence<LINQ_SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>, typename const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>::value_type&>
+{
+	typedef typename const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>::value_type& ResultType;
+
+	const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>& cont;
+	typename alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>::const_iterator it;
+
+	LINQ_SelectMemberIt(const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>& cont)
+		: cont(cont), it(cont.begin())
+	{}
+
+	//	Contract for LINQSequence
+	bool IsEmpty() const { return it == cont.end(); }
+	void operator++() { ++it; }
+	ResultType operator*() const { return *it; }
+};
+
+
+template<typename CONT, typename MEM_PTR, typename VALUE_TYPE>
+LINQ_SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>	LINQ(const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>& cont)
+{
+	return LINQ_SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>(cont);
+}
+
 
