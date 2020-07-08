@@ -20,4 +20,5 @@ for( const Star& star : alg::select2nd(stars) )
 ```
 
 There are more content, which allows to you work with containers as a first class member of the language. Forget begin(), end().
+
 This is Windows version. There are known compilation issues in Linux, fixes are simple but are not yet made it here.
