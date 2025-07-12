@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <limits>
 #include <type_traits>
+#include <random>
+#include <assert.h>
+#include "IsInstanceOf.h"
 
 #undef min
 #undef max
-
-//	Please define your own ASSERT macro before using this header.
-//	Some functions require it's presence
 
 //
 //	Presented algorithms will allow to use functional approach at max:
@@ -71,13 +71,13 @@
 //	Returns index of the object in an container, or size() if was not found
 //	size_t object_id(container, value)
 //
-//	Retrieves element from map/unordered_map, ASSERT if no such element
+//	Retrieves element from map/unordered_map, `assert` if no such element
 //	value& map_get(container, key)
 //
 //	Retrieves element from map/unordered_map, returns default value if no such element
 //	value& map_get_def(container, key, default)
 //
-//	Retrieves element by index, ASSERT if no such element
+//	Retrieves element by index, `assert` if no such element
 //	value& get_by_idx(container, idx)
 //
 //
@@ -95,13 +95,13 @@
 //	Find element in container, returns end() iterator if wasn't found
 //	iterator find(container, key)
 //
-//	Find element in container, ASSERT if not found
+//	Find element in container, `assert` if not found
 //	iterator find_a(container, key)
 //
 //	Find element in container that satisfies 'predicate', returns end() iterator if wasn't found
 //	iterator find_if(container, predicate)
 //
-//	Find element in container that satisfies 'predicate', ASSERT if not found
+//	Find element in container that satisfies 'predicate', `assert` if not found
 //	iterator find_if_a(container, predicate)
 //
 //	bool binary_search(container, value)
@@ -197,19 +197,17 @@ namespace alg
 	template<typename T, typename U, typename V>
 	T lerp(T from, U to, V scale)
 	{
-		static_assert( is_floating_point<V>::result, "Scale should be able to represent [0-1]" );
+		static_assert( std::is_floating_point_v<V>, "Scale should be able to represent [0-1]" );
 
 		return T( from * (1 - scale) + to * scale );
 	}
 
-#ifdef ASSERT
 	template<typename T, typename U, typename V>
 	T scale(T value, U from, V to)
 	{
-		ASSERT(to != from);
+		assert(to != from);
 		return T( (value - from) / (to - from) );
 	}
-#endif
 
 	template<typename T>
 	T square(T value)
@@ -291,53 +289,15 @@ namespace alg
 		return false;
 	}
 
-
-	namespace Details
-	{
-		template<bool even, unsigned ORDER, typename T>
-		struct pow_branch
-		{
-			static T f(T val)
-			{
-				//	false branch
-				return val * alg::pow<ORDER - 1, T>(val);
-			}
-		};
-
-		template<unsigned ORDER, typename T>
-		struct pow_branch<true, ORDER, T>
-		{
-			static T f(T val)
-			{
-				T v = alg::pow<ORDER / 2, T>(val);
-
-				return v*v;
-			}
-		};
-
-		template<typename T>
-		struct pow_branch<false, 1, T>
-		{
-			static T f(T val)		{	return val;		}
-		};
-		template<typename T>
-		struct pow_branch<true, 0, T>
-		{
-			static T f(T val)		{	return 1;		}
-		};
-	}
-
-	//  some compile time pleasure to break pow<5>(x) into x * ((x^2)^2)
+	//  some compile time pleasure to calculate pow in compile time
 	template<unsigned ORDER, typename T>
-	T pow(T val)
+	consteval T pow(T val)
 	{
-		enum { even = ((ORDER / 2) * 2 == ORDER) };
-
-		return Details::pow_branch<even, ORDER, T>::f(val);
+		T result = val;
+		for(unsigned i = 1; i < ORDER; ++i)
+			result *= val;
+		return result;
 	}
-
-
-
 
 	template<typename CONT>
 	size_t remove(CONT& cont, const typename CONT::value_type& value)
@@ -381,7 +341,7 @@ namespace alg
 			if( pos == std::basic_string<T>::npos )
 				break;
 
-			str.erase( pos, letter_traits<T>::strlen(value) );
+			str.erase( pos, std::char_traits<T>::strlen(value) );
 			++amount;
 		}
 
@@ -470,32 +430,30 @@ namespace alg
 	}
 
 
-#ifdef ASSERT
 	template<typename K, typename V, typename P, typename A>
 	const V& map_get(const std::map<K, V, P, A>& cont, const K& key)
 	{
-		ASSERT( is_exist(cont, key) );
+		assert( is_exist(cont, key) );
 		return cont.find(key)->second;
 	}
 	template<typename K, typename V, typename P, typename A>
 	V& map_get(std::map<K, V, P, A>& cont, const K& key)
 	{
-		ASSERT( is_exist(cont, key) );
+		assert( is_exist(cont, key) );
 		return cont.find(key)->second;
 	}
 	template<typename K, typename V, typename Hasher, typename Keyeq, typename Alloc>
 	const V& map_get(const std::unordered_map<K, V, Hasher, Keyeq, Alloc>& cont, const K& key)
 	{
-		ASSERT(is_exist(cont, key));
+		assert(is_exist(cont, key));
 		return cont.find(key)->second;
 	}
 	template<typename K, typename V, typename Hasher, typename Keyeq, typename Alloc>
 	V& map_get(std::unordered_map<K, V, Hasher, Keyeq, Alloc>& cont, const K& key)
 	{
-		ASSERT(is_exist(cont, key));
+		assert(is_exist(cont, key));
 		return cont.find(key)->second;
 	}
-#endif
 
 
 	template<typename K, typename V, typename P, typename A>
@@ -577,12 +535,11 @@ namespace alg
 	}
 
 
-#ifdef ASSERT
 	template<typename CONTAINER, typename OBJ_T>
 	typename CONTAINER::iterator  find_a(CONTAINER& cont, const OBJ_T& obj)
 	{
 		typename CONTAINER::iterator p = find(cont.begin(), cont.end(), obj);
-		ASSERT(p != cont.end());
+		assert(p != cont.end());
 
 		return p;
 	}
@@ -590,7 +547,7 @@ namespace alg
 	typename CONTAINER::const_iterator  find_a(const CONTAINER& cont, const OBJ_T& obj)
 	{
 		typename CONTAINER::const_iterator p = find(cont, obj);
-		ASSERT(p != cont.end());
+		assert(p != cont.end());
 
 		return p;
 	}
@@ -599,7 +556,7 @@ namespace alg
 	auto  find_if_a( CONTAINER& cont, FUNC func ) -> decltype(std::begin(cont))
 	{
 		typename CONTAINER::iterator p = find_if(cont, func);
-		ASSERT(p != cont.end());
+		assert(p != cont.end());
 
 		return p;
 	}
@@ -607,11 +564,10 @@ namespace alg
 	typename CONTAINER::const_iterator  find_if_a(const CONTAINER& cont, FUNC func)
 	{
 		typename CONTAINER::const_iterator p = find_if(cont, func);
-		ASSERT(p != cont.end());
+		assert(p != cont.end());
 
 		return p;
 	}
-#endif
 
 	template<typename CONT, typename T>
 	bool is_exist(const CONT& cont, const T& value)
@@ -1010,24 +966,24 @@ namespace alg
 		template< typename CONT, typename IT>
 		struct Select1stIt
 		{
-			Select1stIt(CONT&& cont) : holder(std::move(cont)), begin_it(std::begin(holder)), end_it(std::end(holder)) {}
+			Select1stIt(CONT cont) : holder(std::forward<CONT>(cont)), begin_it(begin_adl(holder)), end_it(end_adl(holder)) {}
 			Select1stIt(IT begin_it, IT end_it) : begin_it( begin_it ), end_it( end_it ) {}
 
 			CONT holder;	//	to hold decaying container
 			IT begin_it;
 			IT end_it;
 
-			typedef std::remove_cv_t<std::remove_reference_t<typename IT::value_type>> pair_t;
-			typedef typename const pair_t::first_type  value_type;
+			using value_type = std::remove_cvref_t<decltype(begin_it->first)>;
 
-			struct iterator : public std::iterator
-				<typename IT::iterator_category, value_type, typename IT::difference_type>
+			struct iterator
 			{
 				IT  it;
 
-//				typedef typename cont_iterator_type::difference_type  difference_type;
-				typedef value_type*  pointer;
-				typedef value_type&  reference;
+				using iterator_category = std::forward_iterator_tag;
+				using value_type = value_type;
+				using difference_type = typename IT::difference_type;
+				using pointer = value_type*;
+				using reference = value_type&;
 
 				iterator(IT it) : it(it) {}
 
@@ -1039,21 +995,19 @@ namespace alg
 				iterator& operator++(int) { it++; return *this; }
 				iterator& operator--() { --it; return *this; }
 				iterator& operator--(int) { it--; return *this; }
-				reference  operator*() const { return it->first; }
-				pointer   operator->() const { return &it->first; }
+				reference  operator*() { return it->first; }
+				pointer   operator->() { return &it->first; }
 				bool operator<(const iterator& other) const { return it < other.it; }
 				bool operator>(const iterator& other) const { return it > other.it; }
 
 				IT base_iter() const { return it; }
 			};
 
-			typedef iterator  const_iterator;
-
-			iterator begin() const
+			iterator begin()
 			{
 				return iterator(begin_it);
 			}
-			iterator end() const
+			iterator end()
 			{
 				return iterator(end_it);
 			}
@@ -1063,25 +1017,25 @@ namespace alg
 		template<typename CONT, typename IT>
 		struct Select2ndIt
 		{
-			Select2ndIt(CONT&& cont) : holder(std::move(cont)), begin_it(std::begin(holder)), end_it(std::end(holder)) {}
+			Select2ndIt(CONT&& cont) : holder(std::forward<CONT>(cont)), begin_it(begin_adl(holder)), end_it(end_adl(holder)) {}
 			Select2ndIt(IT begin_it, IT end_it) : begin_it( begin_it ), end_it( end_it ) {}
 
-			CONT holder;	//	to hold decaying container
+			CONT holder;	//	to hold possibly decaying container
 			IT begin_it;
 			IT end_it;
 
-			typedef std::remove_reference_t<typename IT::reference> pair_t;
-			typedef typename if_type< std::is_const<pair_t>::value, const typename pair_t::second_type, typename pair_t::second_type>::result  value_type;
+			using value_type = std::remove_cvref_t<decltype(begin_it->second)>;
 
-			struct iterator : public std::iterator
-				<typename IT::iterator_category, value_type, typename IT::difference_type>
+			struct iterator
 			{
 				IT  it;
 
-//				typedef typename CONT::iterator::difference_type  difference_type;
 				//	так, потому что value_type отличается от map-а
-				typedef value_type*  pointer;
-				typedef value_type&  reference;
+				using iterator_category = std::forward_iterator_tag;
+				using value_type = value_type;
+				using difference_type = typename IT::difference_type;
+				using pointer = value_type*;
+				using reference = value_type&;
 
 				iterator(IT it) : it(it) {}
 
@@ -1093,48 +1047,45 @@ namespace alg
 				iterator& operator++(int) { it++; return *this; }
 				iterator& operator--() { --it; return *this; }
 				iterator& operator--(int) { it--; return *this; }
-				reference  operator*() const { return it->second; }
-				pointer   operator->() const { return &it->second; }
+				reference  operator*() { return it->second; }
+				pointer   operator->() { return &it->second; }
 				bool operator<(const iterator& other) const { return it < other.it; }
 				bool operator>(const iterator& other) const { return it > other.it; }
 
 				IT base_iter() const { return it; }
 			};
 			
-			typedef iterator  const_iterator;
-
-			iterator begin() const
+			iterator begin()
 			{
 				return iterator(begin_it);
 			}
-			iterator end() const
+			iterator end()
 			{
 				return iterator(end_it);
 			}
 			size_t size() const { return std::distance(begin_it, end_it); }
 		};
 
-		template<typename CONT, typename MEM_PTR, typename VALUE_TYPE>
+		template<typename CONT, typename MEM_PTR>
 		struct SelectMemberIt
 		{
 			CONT cont;
 			MEM_PTR ptr;
 
-			SelectMemberIt(CONT cont, MEM_PTR ptr) : cont(cont), ptr(ptr) {}
+			using value_type = std::remove_cvref_t<decltype((*cont.begin()).*ptr)>;
+			using cont_iterator_type = std::remove_cvref_t<CONT>::iterator;
 
-			using deref_cont = std::remove_reference_t< CONT >;
-			using value_type = typename std::conditional< std::is_const<deref_cont>::value, const VALUE_TYPE, VALUE_TYPE>::type ;
-			using cont_iterator_type = typename std::conditional< std::is_const<deref_cont>::value, typename deref_cont::const_iterator, typename deref_cont::iterator>::type  ;
+			SelectMemberIt(CONT cont, MEM_PTR ptr) : cont(std::forward<CONT>(cont)), ptr(ptr) {}
 
-			struct iterator : public std::iterator
-				<std::forward_iterator_tag, value_type>
+			struct iterator
 			{
+				using iterator_category = std::forward_iterator_tag;
+				using value_type = value_type;
 				cont_iterator_type  it;
 				MEM_PTR ptr;
 
-				//				typedef typename CONT::iterator::difference_type  difference_type;
-				typedef value_type*  pointer;
-				typedef value_type&  reference;
+				using pointer = value_type*;
+				using reference = value_type&;
 
 				iterator(cont_iterator_type it, MEM_PTR ptr) : it(it), ptr(ptr) {}
 
@@ -1144,59 +1095,57 @@ namespace alg
 				iterator& operator++(int) { it++; return *this; }
 				iterator& operator--() { --it; return *this; }
 				iterator& operator--(int) { it--; return *this; }
-				reference  operator*() const { return (*it).*ptr; }
-				pointer   operator->() const { return &(*it).*ptr; }
+				reference  operator*() { return (*it).*ptr; }
+				pointer   operator->() { return &(*it).*ptr; }
 				bool	  operator<(const iterator& other) { return it < other.it; }
 
 				cont_iterator_type base() { return it; }
 			};
 
-			typedef iterator  const_iterator;
-
-			iterator begin() const
+			iterator begin()
 			{
 				return iterator(cont.begin(), ptr);
 			}
-			iterator end() const
+			iterator end()
 			{
 				return iterator(cont.end(), ptr);
 			}
 		};
 
-	}//namespace Details
+		auto begin(instance_of<Select1stIt> auto& val) { return val.begin(); }
+		auto begin(instance_of<Select2ndIt> auto& val) { return val.begin(); }
+		auto begin(instance_of<SelectMemberIt> auto& val) { return val.begin(); }
+		auto end(instance_of<Select1stIt> auto& val) { return val.end(); }
+		auto end(instance_of<Select2ndIt> auto& val) { return val.end(); }
+		auto end(instance_of<SelectMemberIt> auto& val) { return val.end(); }
+	}	//namespace Details
+
+	//	to escape local begin(), end() definitions
+	auto begin_adl(auto& cont) { return begin(cont); }
+	auto end_adl(auto& cont) { return end(cont); }
 
 	template<typename CONT>
-	auto select1st(CONT& cont) { return Details::Select1stIt<Details::empty_type, decltype( std::begin(cont) ) >(std::begin(cont), std::end(cont)); }
+	auto select1st(CONT&& cont) { return Details::Select1stIt<CONT, decltype(begin(cont))>(std::forward<CONT>(cont)); }
 	template<typename IT>
 	auto select1st(IT begin_it, IT end_it) { return Details::Select1stIt<Details::empty_type, IT>(begin_it, end_it); }
-	//	Decaying object version (decaying object needs to be stored)
-	template<typename CONT>
-	auto select1st(CONT&& cont) { return Details::Select1stIt<CONT, decltype(std::begin(cont))>(std::move(cont)); }
 
 	template<typename CONT>
-	auto select2nd(CONT& cont) { return Details::Select2ndIt<Details::empty_type, decltype(std::begin(cont)) >(std::begin(cont), std::end(cont)); }
+	auto select2nd(CONT&& cont) { return Details::Select2ndIt<CONT, decltype(std::begin(cont))>(std::forward<CONT>(cont)); }
 	template<typename IT>
 	auto select2nd(IT begin_it, IT end_it) { return Details::Select2ndIt<Details::empty_type, IT>(begin_it, end_it); }
-	//	Decaying object version (decaying object needs to be stored)
-	template<typename CONT>
-	auto select2nd(CONT&& cont) { return Details::Select2ndIt<CONT, decltype(std::begin(cont))>(std::move(cont)); }
 
 	template<typename CONT, typename MEM_PTR>
 	auto select_member(CONT&& cont, MEM_PTR ptr)
 	{
-		using DeRefCont = std::remove_reference_t< CONT >;
-		typedef std::remove_reference_t<decltype(std::declval<typename DeRefCont::value_type>().*ptr)>  value_type;
-
 		//	For decaying container, CONT will be just CONT, and container will be moved into SelectMemberIt
 		//	For regular reference to container, CONT will be CONT& and reference will be stored instead
-		return Details::SelectMemberIt<CONT, MEM_PTR, value_type>( std::forward<CONT>(cont), ptr);
+		return Details::SelectMemberIt<CONT, MEM_PTR>( std::forward<CONT>(cont), ptr);
 	}
 
-#ifdef ASSERT
 	template<typename U, typename URBG>
 	unsigned random_choose(const U& weights, URBG& rnd)
 	{
-		ASSERT( std::begin(weights) != std::end(weights) );
+		assert( std::begin(weights) != std::end(weights) );
 		double sum = static_cast<float>(alg::sum(weights));
 		if( sum == 0 )
 			return rnd() % ( std::distance(std::begin(weights), std::end(weights)) );
@@ -1213,14 +1162,14 @@ namespace alg
 				return idx;
 		}
 
-		ASSERT(idx > 0);
+		assert(idx > 0);
 		return idx-1;
 	}
 
 	template<typename T, typename U, typename URBG>
 	typename T::value_type random_choose(const T& values, const U& weights, URBG& rnd)
 	{
-		ASSERT(values.size() == weights.size() && values.size() > 0);
+		assert(values.size() == weights.size() && values.size() > 0);
 
 		unsigned idx = random_choose(weights, rnd);
 		auto it = std::begin(values);
@@ -1228,7 +1177,6 @@ namespace alg
 
 		return *it;
 	}
-#endif
 
 	template<typename IT, typename DIFF>
 	IT  advance(IT  it, DIFF  diff)
@@ -1264,12 +1212,14 @@ namespace alg
 		if(last_id < std::numeric_limits<IdxType>::max())
 			return last_id + 1;
 
-		Rnd  rnd;
+		std::random_device rd;  // a seed source for the random number engine
+		std::mt19937 gen(rd()); // mersenne_twister_engine seeded with rd()
+		std::uniform_int_distribution<IdxType> rnd;
 		IdxType i = std::numeric_limits<IdxType>::max();
 
 		while(i--)
 		{
-			IdxType id = rnd.rnd() % (unsigned)std::numeric_limits<IdxType>::max();
+			IdxType id = rnd();
 			if( m.find(id) == m.end() )
 				return id;
 		}

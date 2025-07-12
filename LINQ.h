@@ -3,8 +3,8 @@
 #include <vector>
 #include <set>
 #include <map>
-
-//	define your ASSERT macro
+#include <assert.h>
+#include "IsInstanceOf.h"
 
 //
 //	LINQ in C++
@@ -18,11 +18,8 @@
 //		.Skip(1)
 //	) { .. }
 //
-//	Supported containers:
-//		* map
-//		* vector
-//		* list
-//		* arr[]
+//	Supported
+//		* all containers (maps iterated as pairs)
 //		* abstract generator LINQRange[begin, end)
 //
 //	Supported transformers:
@@ -40,158 +37,189 @@
 //
 //
 
+namespace linq {
 
-template<typename ParentT, typename ResultType>
+namespace details {
+	template<typename T, typename U = std::remove_cvref_t<T>>
+	concept SupportedContainer = requires (U cont)
+	{
+		typename U::value_type;
+		std::begin(cont) == std::end(cont);
+		++std::begin(cont);
+		*std::begin(cont);
+	};
+
+	//  Value holder that unifies the interface.
+	//  Idea that we can store by value or reference.
+	//	If reference - we use reference_wrapper so its copyable, to access - use get()
+	//	If by value - sure, but we want the same interface, like T& get() to access the underlying value
+	template<typename IncomingValueType>
+	struct ValueHolder
+	{
+		ValueHolder(IncomingValueType value)
+			: m_value(std::forward<IncomingValueType>(value)) {
+		}
+
+		auto& get()
+		{
+			if constexpr (stored_as_ref)
+			{
+				return m_value.get();
+			}
+			else
+			{
+				return m_value;
+			}
+		}
+
+	private:
+		static constexpr bool stored_as_ref = std::is_reference_v<IncomingValueType>;
+		using storage_type = std::conditional_t< stored_as_ref, std::reference_wrapper<std::remove_reference_t<IncomingValueType>>, IncomingValueType>;
+		storage_type m_value;
+	};
+
+	//	to escape local begin(), end() definitions
+	auto begin_adl(auto& cont) { return begin(cont); }
+	auto end_adl(auto& cont) { return end(cont); }
+}
+
+template<typename ParentT>
 struct LINQSequence;
 
 template<typename SeqT, typename F>
-struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>, decltype( (*(F*)NULL)	( **(SeqT*)NULL ))	>
+struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>>
 {
-	SeqT seq;
-	const F& functor;
+	details::ValueHolder<SeqT> seq;
+	F functor;
 
-	typedef typename SeqT::ResultType	ParentResultType;
-	typedef decltype( (*(F*)NULL)	( **(SeqT*)NULL ))	ResultType;
-	typedef LINQSelect<SeqT, F>	MyType;
-
-	LINQSelect(SeqT& seq, const F& functor) : seq(seq), functor(functor)
-	{}
+	LINQSelect(SeqT seq, F functor) : seq(std::forward<SeqT>(seq)), functor(std::move(functor))
+	{
+	}
 
 	//	Contract for LINQSequence
-	bool IsEmpty() const { return seq.IsEmpty(); }
-	void operator++() { ++seq; }
-	ResultType operator*() const { return functor(*seq); }
+	bool is_empty() const { return seq.get().is_empty(); }
+	void operator++() { ++seq.get(); }
+	decltype(auto) operator*() { return functor(*seq.get()); }
 };
 
 template<typename SeqT, typename F>
-struct LINQWhere : LINQSequence < LINQWhere<SeqT, F>, typename SeqT::ResultType >
+struct LINQWhere : LINQSequence < LINQWhere<SeqT, F> >
 {
-	SeqT seq;
-	const F& functor;
+	details::ValueHolder<SeqT> seq;
+	F functor;
 
-	typedef typename SeqT::ResultType	ParentResultType;
-	typedef typename SeqT::ResultType	ResultType;
-	typedef LINQWhere<SeqT, F>	MyType;
-
-	LINQWhere( SeqT& seq, const F& functor ) : seq( seq ), functor( functor )
+	LINQWhere(SeqT seq, F functor) : seq(std::forward<SeqT>(seq)), functor(std::move(functor))
 	{
 		JumpToNextValidEntry();
 	}
 
 	void JumpToNextValidEntry()
 	{
-		while( !IsEmpty() && !functor( *seq ) )
+		while(!is_empty() && !functor(*seq))
 			++seq;
 	}
 
 	//	Contract for LINQSequence
-	bool IsEmpty() const { return seq.IsEmpty(); }
-	void operator++() { ++seq; JumpToNextValidEntry(); }
-	ResultType operator*() const { return *seq; }
+	bool is_empty() const { return seq.get().is_empty(); }
+	void operator++() { ++seq.get(); JumpToNextValidEntry(); }
+	decltype(auto) operator*() { return *seq.get(); }
 };
 
 template<typename SeqT>
-struct LINQTake : LINQSequence < LINQTake<SeqT>, typename SeqT::ResultType >
+struct LINQTake : LINQSequence < LINQTake<SeqT> >
 {
-	SeqT seq;
-	const int num;
+	details::ValueHolder<SeqT> seq;
+	int num;
 	int idx = 0;
 
-	typedef typename SeqT::ResultType	ParentResultType;
-	typedef typename SeqT::ResultType	ResultType;
-	typedef LINQTake<SeqT>		MyType;
-
-	LINQTake( SeqT& seq, int num ) : seq( seq ), num( num )
-	{}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return idx < num || num <= 0 || seq.IsEmpty(); }
-	void operator++() { ++idx; ++seq; }
-	ResultType operator*() const { return *seq; }
-};
-
-
-template<typename SeqT, typename F>
-struct LINQIdFilter : LINQSequence < LINQIdFilter<SeqT, F>, typename SeqT::ResultType >
-{
-	typedef typename SeqT::ResultType	ResultType;
-	typedef std::remove_reference_t<decltype(std::declval<F>()(std::declval<typename SeqT::ResultType>()))>  IdType;
-
-	SeqT& seq;
-	F idExtractor;
-	IdType key;
-
-	LINQIdFilter(SeqT& seq, IdType filterId, F idExtractor) : seq(seq), key(filterId), idExtractor(idExtractor)
-	{}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return seq.IsEmpty() || idExtractor(*seq) != key; }
-	void operator++() { ++seq; }
-	ResultType operator*() const { return *seq; }
-};
-
-
-template<typename SeqT, typename F>
-struct LINQGroupSortedBy : LINQSequence < LINQGroupSortedBy<SeqT, F>, LINQIdFilter<SeqT, F> >
-{
-	typedef typename SeqT::ResultType	ParentResultType;
-	typedef LINQIdFilter<SeqT, F>		ResultType;
-	typedef std::remove_const_t<std::remove_reference_t<decltype(std::declval<F>()(std::declval<typename SeqT::ResultType>()))>>  IdType;
-
-	SeqT seq;
-	F idExtractor;
-	IdType key;
-
-	LINQGroupSortedBy(SeqT& seq, F idExtractor) : seq(seq), idExtractor(idExtractor)
+	LINQTake(SeqT seq, int num) : seq(std::forward<SeqT>(seq)), num(num)
 	{
-		if(!seq.IsEmpty())
-			key = idExtractor(*seq);
 	}
 
 	//	Contract for LINQSequence
-	bool IsEmpty() const { return seq.IsEmpty(); }
-	void operator++() {
-		if (!seq.IsEmpty())
-			key = idExtractor(*seq);
-	}
-	ResultType operator*() const { return LINQIdFilter<SeqT, F>(seq, key, idExtractor); }
+	bool is_empty() const { return idx < num || num <= 0 || seq.get().is_empty(); }
+	void operator++() { ++idx; ++seq.get(); }
+	decltype(auto) operator*() { return *seq.get(); }
 };
 
 
 
-template<typename ParentT, typename ResultType>
+template<typename SeqT, typename F>
+struct LINQGroupSortedBy : LINQSequence < LINQGroupSortedBy<SeqT, F> >
+{
+	using key_type = std::decay_t<decltype(F()(std::declval<SeqT>()))>;
+
+	details::ValueHolder<SeqT> seq;
+	F idExtractor;
+	key_type key;
+
+	LINQGroupSortedBy(SeqT seq, F idExtractor) : seq(std::forward<SeqT>(seq)), idExtractor(std::move(idExtractor))
+	{
+		if(!seq.get().is_empty())
+			key = idExtractor(*seq.get());
+	}
+
+	struct LINQIdFilter : LINQSequence<LINQIdFilter>
+	{
+		std::reference_wrapper<SeqT> seq;
+		std::reference_wrapper<F> idExtractor;
+		key_type key;
+
+		LINQIdFilter(SeqT& seq, key_type key, F& idExtractor) : seq(seq), key(std::move(key)), idExtractor(idExtractor)
+		{
+		}
+
+		//	Contract for LINQSequence
+		bool is_empty() const { return seq.get().is_empty() || idExtractor(*seq) != key; }
+		void operator++() { ++seq.get(); }
+		decltype(auto) operator*() { return *seq.get(); }
+	};
+
+	//	Contract for LINQSequence
+	bool is_empty() const { return seq.get().is_empty(); }
+	void operator++() {
+		if(!seq.get().is_empty())
+			key = idExtractor(*seq.get());
+	}
+
+	decltype(auto) operator*() const { return LINQIdFilter{ seq, key, idExtractor }; }
+};
+
+
+
+template<typename ParentT>
 struct LINQSequence
 {
 	//	Interface contract: every descendant class should implement these methods:
-//	 bool IsEmpty() const;
+//	 bool is_empty() const;
 //	 void operator++();
-//	 ResultType operator*() const;
+//	 auto operator*();
 
-	typedef LINQSequence<ParentT, ResultType>	MyType;
+	using my_type = LINQSequence<ParentT>;
 
-	
+	//	Note, lot's of moves - the LINQ is expected to be used as cascade of decorators, where the topmost decorator would own all other decorators in chain
 	template<typename F>
-	LINQSelect< ParentT, F > Select(const F& functor) { return LINQSelect< ParentT, F >(*static_cast<ParentT*>(this), functor); }
+	LINQSelect< ParentT, F > Select(const F& functor) { return LINQSelect< ParentT, F >(std::move(*static_cast<ParentT*>(this)), functor); }
 	template<typename F>
-	LINQWhere< ParentT, F > Where( const F& functor ) { return LINQWhere< ParentT, F >( *static_cast<ParentT*>(this), functor ); }
+	LINQWhere< ParentT, F > Where(const F& functor) { return LINQWhere< ParentT, F >(std::move(*static_cast<ParentT*>(this)), functor); }
 	template<typename F>
-	bool					Any ( const F& functor ) { for(auto&& val : *this) if( functor(val) ) return true; return false; }
+	bool					Any(const F& functor) { for(auto&& val : *this) if(functor(val)) return true; return false; }
 	template<typename F>
-	int						Count ( const F& functor ) { int res = 0; for(auto&& val : *this) res += functor(val) ? 1 : 0; return res; }
+	int						Count(const F& functor) { int res = 0; for(auto&& val : *this) res += functor(val) ? 1 : 0; return res; }
 
-	LINQTake< ParentT >		Take ( int num ) { return LINQTake< ParentT >(*static_cast<ParentT*>(this), num); }
+	LINQTake< ParentT >		Take(int num) { return LINQTake< ParentT >(std::move(*static_cast<ParentT*>(this)), num); }
 
-	ResultType				First()		{ ParentT& fullThis = *static_cast<ParentT*>(this);  ASSERT(!fullThis.IsEmpty()); return *fullThis; }
+	auto&					First() { ParentT& fullThis = *static_cast<ParentT*>(this);  assert(!fullThis.is_empty()); return *fullThis; }
 
 	//	Groups sorted sequence by key
 	template<typename F>
-	LINQGroupSortedBy< ParentT, F>  GroupSortedBy(const F& IdExtractF) { return LINQGroupSortedBy< ParentT, F >(*static_cast<ParentT*>(this), IdExtractF); }
+	LINQGroupSortedBy< ParentT, F>  GroupSortedBy(F IdExtractF) { return LINQGroupSortedBy< ParentT, F >(std::move(*static_cast<ParentT*>(this)), std::move(IdExtractF)); }
 
 	template<typename T, typename F>
-	T						Aggregate( T init_val, const F& functor  )
-	{ 
+	T						Aggregate(T init_val, const F& functor)
+	{
 		ParentT& fullThis = *static_cast<ParentT*>(this);
-		while(!fullThis.IsEmpty())
+		while(!fullThis.is_empty())
 		{
 			init_val = functor(init_val, *fullThis);
 			++fullThis;
@@ -203,298 +231,123 @@ struct LINQSequence
 	ParentT					Skip(int num)
 	{
 		ParentT& fullThis = *static_cast<ParentT*>(this);
-		while(num-- > 0 && !fullThis.IsEmpty())
+		while(num-- > 0 && !fullThis.is_empty())
 			++fullThis;
 
 		return fullThis;
 	}
 
-
-	std::vector<ResultType> ToVector()
+	auto ToVector()
 	{
-		std::vector<ResultType> list;
+		std::vector<std::decay_t<decltype(First())>> list;
 
 		ParentT& fullThis = *static_cast<ParentT*>(this);
-		while(!fullThis.IsEmpty())
+		while(!fullThis.is_empty())
 		{
-			list.push_back( *fullThis );
+			list.push_back(*fullThis);
 			++fullThis;
 		}
 
 		return list;
 	}
 
-	//	for each friendly
-	struct RefType
+	struct iterator_sentinel {};
+
+	struct iterator
 	{
-		using iterator_category = std::forward_iterator_tag;
-		using value_type = std::remove_cv_t<std::remove_reference_t<ResultType>>;
 		using difference_type = std::ptrdiff_t;
-		using pointer = const value_type * ;
-		using reference = ResultType;
+		using value_type = decltype(*std::declval<ParentT>());
 
-		RefType(MyType& me) : me(me)
-		{}
+		iterator(ParentT& me) : me(me)
+		{
+		}
 
-		bool operator==(const RefType& ) const { return static_cast<ParentT&>(me).IsEmpty(); }
-		bool operator!=(const RefType& ) const { return !static_cast<ParentT&>(me).IsEmpty(); }
-		void operator++() { ++static_cast<ParentT&>(me); }
-		reference operator*() const { return *static_cast<const ParentT&>(me); }
-		pointer operator->() const { return &*static_cast<const ParentT&>(me); }
+		bool operator==(iterator_sentinel) const { return me.is_empty(); }
+		bool operator!=(iterator_sentinel) const { return !me.is_empty(); }
+		void operator++() { ++me; }
+		decltype(auto) operator*() { return *me; }
+		auto* operator->() { return &*me; }
 
-		MyType& me;
+		ParentT& me;
 	};
 
-	//	for each friendly
-	RefType begin() { return RefType(*this); }
-	RefType end() { return RefType(*this); }
+	//static_assert(std::input_iterator<iterator>);
 
-	using iterator = RefType;
-	using const_iterator = RefType;
-	using value_type = std::remove_cv_t<std::remove_reference_t<ResultType>>;
+	//	for each friendly
+	iterator begin() { return iterator(*static_cast<ParentT*>(this)); }
+	iterator_sentinel end() { return {}; }
 };
 
+
+auto begin(instance_of<LINQSequence> auto& val)
+{
+	return val.begin();
+}
+auto end(instance_of<LINQSequence> auto& val)
+{
+	return val.end();
+}
 
 
 //////////////////////////////////////////////////////////////////////////
 //	Generator
 template<typename SeqT>
-struct LINQ_GenSeq : LINQSequence < LINQ_GenSeq<SeqT>, SeqT >
+struct LINQ_GenSeq : LINQSequence < LINQ_GenSeq<SeqT> >
 {
 	const SeqT end_;	//	not included
 	SeqT cur;
 
-	typedef SeqT	ParentResultType;
-	typedef SeqT	ResultType;
-	typedef LINQ_GenSeq<SeqT>		MyType;
-
-	LINQ_GenSeq( SeqT begin, SeqT end ) : end_( end ), cur(begin)
+	LINQ_GenSeq(SeqT begin, SeqT end) : end_(end), cur(begin)
 	{
-		ASSERT(cur <= end);
+		assert(cur <= end);
 	}
 
 	//	Contract for LINQSequence
-	bool IsEmpty() const { return cur == end_; }
+	bool is_empty() const { return cur == end_; }
 	void operator++() { ++cur; }
-	ResultType operator*() const { return cur; }
+	auto operator*() { return cur; }
 };
 
 template<typename T>
-LINQ_GenSeq<T>	LINQRange(T begin, T end)
+auto LINQRange(T begin, T end)
 {
-	return LINQ_GenSeq<T>(begin, end);
+	return LINQ_GenSeq<std::decay_t<T>>(begin, end);
 }
 
 
 //////////////////////////////////////////////////////////////////////////
-//	Vector
-
-template<typename T>
-struct LINQ_vector : LINQSequence<LINQ_vector<T>, const T&>
+//	All containers
+//
+//	ReturnType rules (this is what std::ranges models)
+//	* CONT&& -> VALUE&		, reason why not &&, because item can get requested a few times and it's inconvenient to work with this reference
+//	* CONT& -> VALUE&
+//	* const CONT& -> const VALUE&
+//
+template<typename ContainerHolder>
+struct LINQ_container : LINQSequence<LINQ_container<ContainerHolder>>
 {
-	typedef const T& ResultType;
+	//	either std::container<T> or std::container<T>& or const versions of it
+	//	or can be T (&) arr[N]
+	details::ValueHolder<ContainerHolder> cont;
+	decltype(details::begin_adl(cont.get())) it;
 
-	const std::vector<T>& list;
-	typename std::vector<T>::const_iterator it;
-
-	LINQ_vector(const std::vector<T>& list) : list(list)
-	{
-		it = list.begin();
-	}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return it == list.end(); }
-	void operator++() { ++it; }
-	ResultType operator*() const { return *it; }
-};
-
-
-template<typename T>
-LINQ_vector<T>	LINQ(const std::vector<T>& list)
-{
-	return LINQ_vector<T>(list);
-}
-
-
-
-//////////////////////////////////////////////////////////////////////////
-//	Set
-
-template<typename T, typename L, typename A>
-struct LINQ_set : LINQSequence<LINQ_set<T,L,A>, const T&>
-{
-	typedef const T& ResultType;
-
-	const std::set<T,L,A>& list;
-	typename std::set<T,L,A>::const_iterator it;
-
-	LINQ_set(const std::set<T,L,A>& list) : list(list)
-	{
-		it = list.begin();
-	}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return it == list.end(); }
-	void operator++() { ++it; }
-	ResultType operator*() const { return *it; }
-};
-
-
-template<typename T, typename L, typename A>
-LINQ_set<T,L,A>	LINQ(const std::set<T,L,A>& list)
-{
-	return LINQ_set<T,L,A>(list);
-}
-
-
-
-
-//////////////////////////////////////////////////////////////////////////
-//	Map
-
-template<typename K, typename V, typename PR, typename A>
-struct LINQ_map : LINQSequence<LINQ_map<K, V, PR, A>, const std::pair<const K,V>&>
-{
-	typedef const std::pair<const K,V>& ResultType;
-
-	const std::map<K, V, PR, A>& map;
-	typename std::map<K, V, PR, A>::const_iterator it;
-
-	LINQ_map(const std::map<K, V, PR, A>& map) : map(map)
-	{
-		it = map.begin();
-	}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return it == map.end(); }
-	void operator++() { ++it; }
-	ResultType operator*() const { return *it; }
-};
-
-template<typename K, typename V, typename PR, typename A>
-LINQ_map<K, V, PR, A>	LINQ(const std::map<K, V, PR, A>& map)
-{
-	return LINQ_map<K, V, PR, A>(map);
-}
-
-
-
-//////////////////////////////////////////////////////////////////////////
-//	Built-in Array
-
-template<typename T, size_t N>
-struct LINQ_array : LINQSequence<LINQ_array<T, N>, const T&>
-{
-	typedef const T& ResultType;
-
-	const T (&arr)[N];
-	size_t idx = 0;
-
-	LINQ_array(const T (&arr)[N])
-		: arr(arr)
-	{
-	}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return idx == N; }
-	void operator++() { ++idx; }
-	ResultType operator*() const { return arr[idx]; }
-};
-
-
-template<typename T, size_t N>
-LINQ_array<T, N>	LINQ(const T (&arr)[N])
-{
-	return LINQ_array<T, N>(arr);
-}
-
-
-//////////////////////////////////////////////////////////////////////////
-//	Select 1st & 2nd wrappers
-
-namespace alg { namespace Details
-{
-template<typename CONT, typename IT> struct Select1stIt;
-template<typename CONT, typename IT> struct Select2ndIt;
-template<typename CONT, typename MEM_PTR, typename VALUE_TYPE> struct SelectMemberIt;
-}}
-
-template<typename CONT, typename IT>
-struct LINQ_Select2nd : LINQSequence<LINQ_Select2nd<CONT, IT>, typename const alg::Details::Select2ndIt<CONT, IT>::value_type&>
-{
-	typedef typename const alg::Details::Select2ndIt<CONT, IT>::value_type& ResultType;
-
-	const alg::Details::Select2ndIt<CONT, IT>& cont;
-	typename alg::Details::Select2ndIt<CONT, IT>::const_iterator it;
-
-	LINQ_Select2nd(const alg::Details::Select2ndIt<CONT, IT>& cont)
-		: cont(cont), it(cont.begin())
+	explicit LINQ_container(ContainerHolder cont)
+		: cont(std::forward<ContainerHolder>(cont))
+		, it(details::begin_adl(cont) )
 	{}
 
 	//	Contract for LINQSequence
-	bool IsEmpty() const { return it == cont.end(); }
+	bool is_empty() const { return it == details::end_adl(cont.get()); }
 	void operator++() { ++it; }
-	ResultType operator*() const { return *it; }
+	auto& operator*() { return *it; }
 };
 
 
-template<typename CONT, typename IT>
-auto LINQ(const alg::Details::Select2ndIt<CONT, IT>& cont)
+template<details::SupportedContainer T>
+auto LINQ(T&& cont)
 {
-	return LINQ_Select2nd<CONT, IT>(cont);
+	return LINQ_container<T>(std::forward<T>(cont));
 }
 
 
-template<typename CONT, typename IT>
-struct LINQ_Select1st : LINQSequence<LINQ_Select1st<CONT, IT>, typename const alg::Details::Select1stIt<CONT, IT>::value_type&>
-{
-	typedef typename const alg::Details::Select1stIt<CONT, IT>::value_type& ResultType;
-
-	const alg::Details::Select1stIt<CONT, IT>& cont;
-	typename alg::Details::Select1stIt<CONT, IT>::const_iterator it;
-
-	LINQ_Select1st(const alg::Details::Select1stIt<CONT, IT>& cont)
-		: cont(cont), it(cont.begin())
-	{}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return it == cont.end(); }
-	void operator++() { ++it; }
-	ResultType operator*() const { return *it; }
-};
-
-
-template<typename CONT, typename IT>
-auto LINQ(const alg::Details::Select1stIt<CONT, IT>& cont)
-{
-	return LINQ_Select1st<CONT, IT>(cont);
 }
-
-
-
-template<typename CONT, typename MEM_PTR, typename VALUE_TYPE>
-struct LINQ_SelectMemberIt : LINQSequence<LINQ_SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>, typename const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>::value_type&>
-{
-	typedef typename const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>::value_type& ResultType;
-
-	const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>& cont;
-	typename alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>::const_iterator it;
-
-	LINQ_SelectMemberIt(const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>& cont)
-		: cont(cont), it(cont.begin())
-	{}
-
-	//	Contract for LINQSequence
-	bool IsEmpty() const { return it == cont.end(); }
-	void operator++() { ++it; }
-	ResultType operator*() const { return *it; }
-};
-
-
-template<typename CONT, typename MEM_PTR, typename VALUE_TYPE>
-LINQ_SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>	LINQ(const alg::Details::SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>& cont)
-{
-	return LINQ_SelectMemberIt<CONT, MEM_PTR, VALUE_TYPE>(cont);
-}
-
-
