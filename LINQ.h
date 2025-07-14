@@ -71,6 +71,17 @@ namespace details {
 				return m_value;
 			}
 		}
+		auto& get() const
+		{
+			if constexpr (stored_as_ref)
+			{
+				return m_value.get();
+			}
+			else
+			{
+				return m_value;
+			}
+		}
 
 	private:
 		static constexpr bool stored_as_ref = std::is_reference_v<IncomingValueType>;
@@ -79,15 +90,17 @@ namespace details {
 	};
 
 	//	to escape local begin(), end() definitions
+	auto begin_adl(const auto& cont) { return begin(cont); }
+	auto end_adl(const auto& cont) { return end(cont); }
 	auto begin_adl(auto& cont) { return begin(cont); }
 	auto end_adl(auto& cont) { return end(cont); }
 }
 
-template<typename ParentT>
+template<typename ParentT, typename ValueType>
 struct LINQSequence;
 
 template<typename SeqT, typename F>
-struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>>
+struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>, decltype(F()( std::declval<typename std::decay_t<SeqT>::value_type>() ))>
 {
 	details::ValueHolder<SeqT> seq;
 	F functor;
@@ -99,11 +112,11 @@ struct LINQSelect : LINQSequence< LINQSelect<SeqT, F>>
 	//	Contract for LINQSequence
 	bool is_empty() const { return seq.get().is_empty(); }
 	void operator++() { ++seq.get(); }
-	decltype(auto) operator*() { return functor(*seq.get()); }
+	decltype(auto) operator*() const { return functor(*seq.get()); }
 };
 
 template<typename SeqT, typename F>
-struct LINQWhere : LINQSequence < LINQWhere<SeqT, F> >
+struct LINQWhere : LINQSequence< LINQWhere<SeqT, F>, decltype(std::declval<SeqT>().operator*()) >
 {
 	details::ValueHolder<SeqT> seq;
 	F functor;
@@ -115,18 +128,18 @@ struct LINQWhere : LINQSequence < LINQWhere<SeqT, F> >
 
 	void JumpToNextValidEntry()
 	{
-		while(!is_empty() && !functor(*seq))
-			++seq;
+		while(!is_empty() && !functor(*seq.get()))
+			++seq.get();
 	}
 
 	//	Contract for LINQSequence
 	bool is_empty() const { return seq.get().is_empty(); }
 	void operator++() { ++seq.get(); JumpToNextValidEntry(); }
-	decltype(auto) operator*() { return *seq.get(); }
+	decltype(auto) operator*() const { return *seq.get(); }
 };
 
 template<typename SeqT>
-struct LINQTake : LINQSequence < LINQTake<SeqT> >
+struct LINQTake : LINQSequence< LINQTake<SeqT>, decltype(std::declval<SeqT>().operator*()) >
 {
 	details::ValueHolder<SeqT> seq;
 	int num;
@@ -139,28 +152,16 @@ struct LINQTake : LINQSequence < LINQTake<SeqT> >
 	//	Contract for LINQSequence
 	bool is_empty() const { return idx < num || num <= 0 || seq.get().is_empty(); }
 	void operator++() { ++idx; ++seq.get(); }
-	decltype(auto) operator*() { return *seq.get(); }
+	decltype(auto) operator*() const { return *seq.get(); }
 };
 
-
-
-template<typename SeqT, typename F>
-struct LINQGroupSortedBy : LINQSequence < LINQGroupSortedBy<SeqT, F> >
+namespace details
 {
-	using key_type = std::decay_t<decltype(F()(std::declval<SeqT>()))>;
-
-	details::ValueHolder<SeqT> seq;
-	F idExtractor;
-	key_type key;
-
-	LINQGroupSortedBy(SeqT seq, F idExtractor) : seq(std::forward<SeqT>(seq)), idExtractor(std::move(idExtractor))
+	template<typename SeqT, typename F>
+	struct LINQIdFilter : LINQSequence<LINQIdFilter<SeqT, F>, decltype( std::declval<SeqT>().operator*() )>
 	{
-		if(!seq.get().is_empty())
-			key = idExtractor(*seq.get());
-	}
+		using key_type = std::decay_t<decltype(F()( *std::declval<SeqT>().begin() ))>;
 
-	struct LINQIdFilter : LINQSequence<LINQIdFilter>
-	{
 		std::reference_wrapper<SeqT> seq;
 		std::reference_wrapper<F> idExtractor;
 		key_type key;
@@ -172,8 +173,25 @@ struct LINQGroupSortedBy : LINQSequence < LINQGroupSortedBy<SeqT, F> >
 		//	Contract for LINQSequence
 		bool is_empty() const { return seq.get().is_empty() || idExtractor(*seq) != key; }
 		void operator++() { ++seq.get(); }
-		decltype(auto) operator*() { return *seq.get(); }
+		decltype(auto) operator*() const { return *seq.get(); }
 	};
+}
+
+template<typename SeqT, typename F>
+struct LINQGroupSortedBy : LINQSequence< LINQGroupSortedBy<SeqT, F>, details::LINQIdFilter<std::decay_t<SeqT>, std::decay_t<F>> >
+{
+	using key_type = std::decay_t<decltype(F()( std::declval<SeqT>().begin().operator*() ))>;
+	using value_type = details::LINQIdFilter<std::decay_t<SeqT>, std::decay_t<F>>;
+
+	details::ValueHolder<SeqT> seq;
+	F idExtractor;
+	key_type key;
+
+	LINQGroupSortedBy(SeqT seq, F idExtractor) : seq(std::forward<SeqT>(seq)), idExtractor(std::move(idExtractor))
+	{
+		if(!seq.get().is_empty())
+			key = idExtractor(*seq.get());
+	}
 
 	//	Contract for LINQSequence
 	bool is_empty() const { return seq.get().is_empty(); }
@@ -182,12 +200,13 @@ struct LINQGroupSortedBy : LINQSequence < LINQGroupSortedBy<SeqT, F> >
 			key = idExtractor(*seq.get());
 	}
 
-	decltype(auto) operator*() const { return LINQIdFilter{ seq, key, idExtractor }; }
+	auto operator*() const { return value_type{ seq, key, idExtractor }; }
 };
 
 
-
-template<typename ParentT>
+//	YieldType is needed due to CRTP instantiation - CRTP base is instantiated first and it does not have definition of derived class - querying parent fails with "use of undefined type"
+//	YieldType is exactly what operator*() of parent would return, usually cref of value_type
+template<typename ParentT, typename YieldType>
 struct LINQSequence
 {
 	//	Interface contract: every descendant class should implement these methods:
@@ -195,7 +214,9 @@ struct LINQSequence
 //	 void operator++();
 //	 auto operator*();
 
-	using my_type = LINQSequence<ParentT>;
+	using my_type = LINQSequence<ParentT, YieldType>;
+	using value_type = std::remove_cvref_t<YieldType>;
+
 
 	//	Note, lot's of moves - the LINQ is expected to be used as cascade of decorators, where the topmost decorator would own all other decorators in chain
 	template<typename F>
@@ -253,20 +274,20 @@ struct LINQSequence
 
 	struct iterator_sentinel {};
 
+	template<typename ItValueType>
 	struct iterator
 	{
 		using difference_type = std::ptrdiff_t;
-		using value_type = decltype(*std::declval<ParentT>());
+		using value_type = ItValueType;
 
 		iterator(ParentT& me) : me(me)
-		{
-		}
+		{}
 
 		bool operator==(iterator_sentinel) const { return me.is_empty(); }
 		bool operator!=(iterator_sentinel) const { return !me.is_empty(); }
 		void operator++() { ++me; }
-		decltype(auto) operator*() { return *me; }
-		auto* operator->() { return &*me; }
+
+		decltype(auto) operator*() const { return *me; }
 
 		ParentT& me;
 	};
@@ -274,8 +295,10 @@ struct LINQSequence
 	//static_assert(std::input_iterator<iterator>);
 
 	//	for each friendly
-	iterator begin() { return iterator(*static_cast<ParentT*>(this)); }
-	iterator_sentinel end() { return {}; }
+	auto begin()		{ return iterator<value_type>(*static_cast<ParentT*>(this)); }
+	//	constness is provided by underlying const value, but the underlying iterator itself cannot be const - it'll be updating internal values during traversing
+	auto begin() const  { return iterator<const value_type>(*const_cast<ParentT*>( static_cast<const ParentT*>(this))); }
+	iterator_sentinel end() const { return {}; }
 };
 
 
@@ -292,7 +315,7 @@ auto end(instance_of<LINQSequence> auto& val)
 //////////////////////////////////////////////////////////////////////////
 //	Generator
 template<typename SeqT>
-struct LINQ_GenSeq : LINQSequence < LINQ_GenSeq<SeqT> >
+struct LINQ_GenSeq : LINQSequence< LINQ_GenSeq<SeqT>, SeqT >
 {
 	const SeqT end_;	//	not included
 	SeqT cur;
@@ -305,10 +328,10 @@ struct LINQ_GenSeq : LINQSequence < LINQ_GenSeq<SeqT> >
 	//	Contract for LINQSequence
 	bool is_empty() const { return cur == end_; }
 	void operator++() { ++cur; }
-	auto operator*() { return cur; }
+	auto operator*() const { return cur; }
 };
 
-template<typename T>
+template<typename T> requires std::is_arithmetic_v<std::decay_t<T>>
 auto LINQRange(T begin, T end)
 {
 	return LINQ_GenSeq<std::decay_t<T>>(begin, end);
@@ -323,23 +346,23 @@ auto LINQRange(T begin, T end)
 //	* CONT& -> VALUE&
 //	* const CONT& -> const VALUE&
 //
-template<typename ContainerHolder>
-struct LINQ_container : LINQSequence<LINQ_container<ContainerHolder>>
+template<typename ContainerStorageType>
+struct LINQ_container : LINQSequence<LINQ_container<ContainerStorageType>, decltype(*details::begin_adl( std::declval<std::decay_t<ContainerStorageType>>() )) >
 {
 	//	either std::container<T> or std::container<T>& or const versions of it
 	//	or can be T (&) arr[N]
-	details::ValueHolder<ContainerHolder> cont;
+	details::ValueHolder<ContainerStorageType> cont;
 	decltype(details::begin_adl(cont.get())) it;
 
-	explicit LINQ_container(ContainerHolder cont)
-		: cont(std::forward<ContainerHolder>(cont))
-		, it(details::begin_adl(cont) )
+	explicit LINQ_container(ContainerStorageType cont)
+		: cont(std::forward<ContainerStorageType>(cont))
+		, it(details::begin_adl(this->cont.get()) )
 	{}
 
 	//	Contract for LINQSequence
 	bool is_empty() const { return it == details::end_adl(cont.get()); }
 	void operator++() { ++it; }
-	auto& operator*() { return *it; }
+	auto& operator*() const { return *it; }
 };
 
 

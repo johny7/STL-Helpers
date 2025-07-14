@@ -8,8 +8,6 @@
 
 using namespace linq;
 
-Add constness to all iterators (to support const LINQ/select1st/.. objects)
-
 std::string print_container(const auto& cont)
 {
 	std::stringstream s;
@@ -38,18 +36,18 @@ void assert_eq(const auto&& a, const auto&& b)
 			break;
 
 		if(it1_finished != it2_finished || *it1 != *it2)
-			throw std::runtime_error( std::format("Expected containers to be equal {} == {}", print_container(a), print_container(b)) );
+			throw std::runtime_error( std::format("LINQ tests: Expected containers to be equal {} == {}", print_container(a), print_container(b)) );
 
 		++it1, ++it2;
 	}
 }
 
-struct ZZ
+struct LINQTests
 {
 	std::vector<std::string>	list;
 	size_t storez;
 
-	ZZ()
+	LINQTests()
 	{
 		list.push_back("A");
 		list.push_back("SD");
@@ -104,5 +102,5 @@ struct ZZ
 
 void LINQTest()
 {
-	ZZ zz;
+	LINQTests tests;
 }

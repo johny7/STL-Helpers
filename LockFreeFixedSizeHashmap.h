@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bit>
+#include <array>
 #include <atomic>
 #include <iostream>
 #include <optional>
@@ -21,7 +22,7 @@
 //	adapt your logging
 #define LOGGING(...) std::cout << std::format(__VA_ARGS__) << std::endl
 
-namespace Detail {
+namespace details {
 	//	Memory-less fixed size allocator of size NodesMax
 	//	each chunk is of ChunkSize. Returns available indexes (i.e. does not own or manage the memory itself).
 	template<size_t NodesMax>
@@ -38,7 +39,7 @@ namespace Detail {
 			auto bits_overflow = BitMaskLen * BitmaskBits - NodesMax;
 			BitmaskType val = 0;
 			for (auto i = 0; i < bits_overflow; ++i)
-				val = (val >> 1) | (1 << (BitmaskBits - 1));
+				val = (val >> 1) | (BitmaskType(1) << (BitmaskBits - 1));
 			free_bitmask[BitMaskLen - 1] = val;
 		}
 
@@ -56,11 +57,11 @@ namespace Detail {
 			}
 
 			//	searching for the first zero bit
-			unsigned zero_at_bit = std::countr_one(last_allocated_free_bitmask_idx);
+			unsigned zero_at_bit = std::countr_one(free_bitmask[last_allocated_free_bitmask_idx]);
 
 			//	mark as allocated
 			BitmaskType bitmask = BitmaskType(1) << zero_at_bit;
-			last_allocated_free_bitmask_idx |= bitmask;
+			free_bitmask[last_allocated_free_bitmask_idx] |= bitmask;
 
 			size_t idx = last_allocated_free_bitmask_idx * BitmaskBits + zero_at_bit;
 
@@ -120,7 +121,7 @@ template<typename K, typename V, size_t MaxElems>
 class LockFreeFixedSizeHashMap
 {
 	static constexpr size_t EmptyBucketTag = std::numeric_limits<size_t>::max();
-	static constexpr size_t BucketsNum = next_prime(MaxElems * 2);
+	static constexpr size_t BucketsNum = details::next_prime(MaxElems * 2);
 
 public:
 	LockFreeFixedSizeHashMap()
@@ -154,7 +155,7 @@ public:
 		}
 
 		//	alloc new node, by doing linked list (new node enters first)
-		size_t node_idx = node_allocator.alloc();
+		node_idx = node_allocator.alloc();
 		Node& node = nodes[node_idx];
 		new (&node) Node();
 
@@ -290,7 +291,7 @@ private:
 
 	alignas(64) std::array<std::atomic<size_t>, BucketsNum> buckets;	//	slot marked as EmptyBucketTag - empty
 	alignas(64) std::array<Node, MaxElems> nodes;
-	alignas(64) Detail::FixedAllocator<MaxElems> node_allocator;
+	alignas(64) details::FixedAllocator<MaxElems> node_allocator;
 };
 
 

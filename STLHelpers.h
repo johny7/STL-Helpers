@@ -645,7 +645,7 @@ namespace alg
 	}
 
 
-	namespace Details
+	namespace details
 	{
 		template<typename T>
 		inline void reserve(T&  , size_t  ) {}
@@ -666,7 +666,7 @@ namespace alg
 	template<typename SRC_CONTAINER, typename DST_CONTAINER, typename F>
 	auto copy(const SRC_CONTAINER& src, DST_CONTAINER& dst, F transform) -> typename std::is_class< decltype(transform(*src.begin())) >::value_type
 	{
-		Details::reserve(dst, dst.size() + src.size());
+		details::reserve(dst, dst.size() + src.size());
 
 		bool ret_val = false;
 		for(typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end(); ++p)
@@ -767,19 +767,8 @@ namespace alg
 
 
 
-	__declspec(selectany) struct
-	{
-		template<typename T>
-		bool operator()(const T& a, const T& b) const { return a > b; }
-	} greater;
-	__declspec(selectany) struct
-	{
-		template<typename T>
-		bool operator()(const T& a, const T& b) const { return a < b; }
-	} less;
-
-	template<typename SRC_CONTAINER, typename PTR_TYPE, typename FUNC = decltype(less)>
-	auto sort(SRC_CONTAINER& container, PTR_TYPE obj_ptr, FUNC predicate = less) -> std::enable_if_t< std::is_member_object_pointer<PTR_TYPE>::value >
+	template<typename SRC_CONTAINER, typename PTR_TYPE, typename FUNC = std::ranges::less>
+	auto sort(SRC_CONTAINER& container, PTR_TYPE obj_ptr, FUNC predicate = std::ranges::less()) -> std::enable_if_t< std::is_member_object_pointer<PTR_TYPE>::value >
 	{
 		return std::sort(container.begin(), container.end(), [=](auto& a, auto& b)
 		{
@@ -958,8 +947,13 @@ namespace alg
 	}
 
 
+	//	to escape local begin(), end() definitions
+	auto begin_adl(const auto& cont) { return begin(cont); }
+	auto end_adl(const auto& cont) { return end(cont); }
+	auto begin_adl(auto& cont) { return begin(cont); }
+	auto end_adl(auto& cont) { return end(cont); }
 
-	namespace Details
+	namespace details
 	{
 		struct empty_type {};
 
@@ -973,44 +967,39 @@ namespace alg
 			IT begin_it;
 			IT end_it;
 
-			using value_type = std::remove_cvref_t<decltype(begin_it->first)>;
+			using value_type = std::remove_reference_t<decltype(begin_it->first)>;
 
+			template<typename ItValueType>
 			struct iterator
 			{
 				IT  it;
 
-				using iterator_category = std::forward_iterator_tag;
-				using value_type = value_type;
+				using iterator_category = IT::iterator_category;
+				using value_type = ItValueType;	//	const value_type or value_type
 				using difference_type = typename IT::difference_type;
 				using pointer = value_type*;
 				using reference = value_type&;
 
 				iterator(IT it) : it(it) {}
 
-				bool operator==(const iterator& other) const { return it == other.it; }
-				bool operator!=(const iterator& other) const { return it != other.it; }
+				bool operator==(const instance_of<iterator> auto& other) const { return it == other.it; }
+				bool operator!=(const instance_of<iterator> auto& other) const { return it != other.it; }
 				iterator& operator+=(size_t idx) { it += idx; return *this; }
 				typename IT::difference_type operator-(const iterator& other) { return it - other.it; }
 				iterator& operator++() { ++it; return *this; }
 				iterator& operator++(int) { it++; return *this; }
 				iterator& operator--() { --it; return *this; }
 				iterator& operator--(int) { it--; return *this; }
-				reference  operator*() { return it->first; }
-				pointer   operator->() { return &it->first; }
-				bool operator<(const iterator& other) const { return it < other.it; }
-				bool operator>(const iterator& other) const { return it > other.it; }
+				reference  operator*() const { return it->first; }
+				pointer   operator->() const { return &it->first; }
 
 				IT base_iter() const { return it; }
 			};
 
-			iterator begin()
-			{
-				return iterator(begin_it);
-			}
-			iterator end()
-			{
-				return iterator(end_it);
-			}
+			auto begin()		{ return iterator<value_type>(begin_it); }
+			auto end()			{ return iterator<value_type>(end_it); }
+			auto begin() const	{ return iterator<const value_type>(begin_it); }
+			auto end() const	{ return iterator<const value_type>(end_it); }
 			size_t size() const { return std::distance(begin_it, end_it); }
 		};
 
@@ -1024,45 +1013,39 @@ namespace alg
 			IT begin_it;
 			IT end_it;
 
-			using value_type = std::remove_cvref_t<decltype(begin_it->second)>;
+			using value_type = std::remove_reference_t<decltype(begin_it->second)>;
 
+			template<typename ItValueType>
 			struct iterator
 			{
 				IT  it;
 
-				//	так, потому что value_type отличается от map-а
-				using iterator_category = std::forward_iterator_tag;
-				using value_type = value_type;
+				using iterator_category = IT::iterator_category;
+				using value_type = ItValueType;
 				using difference_type = typename IT::difference_type;
 				using pointer = value_type*;
 				using reference = value_type&;
 
 				iterator(IT it) : it(it) {}
 
-				bool operator==(const iterator& other) const { return it == other.it; }
-				bool operator!=(const iterator& other) const { return it != other.it; }
+				bool operator==(const instance_of<iterator> auto& other) const { return it == other.it; }
+				bool operator!=(const instance_of<iterator> auto& other) const { return it != other.it; }
 				iterator& operator+=(size_t idx) { it += idx; return *this; }
 				typename IT::difference_type operator-(const iterator& other) { return it - other.it; }
 				iterator& operator++() { ++it; return *this; }
 				iterator& operator++(int) { it++; return *this; }
 				iterator& operator--() { --it; return *this; }
 				iterator& operator--(int) { it--; return *this; }
-				reference  operator*() { return it->second; }
-				pointer   operator->() { return &it->second; }
-				bool operator<(const iterator& other) const { return it < other.it; }
-				bool operator>(const iterator& other) const { return it > other.it; }
+				reference  operator*() const { return it->second; }
+				pointer   operator->() const { return &it->second; }
 
 				IT base_iter() const { return it; }
 			};
 			
-			iterator begin()
-			{
-				return iterator(begin_it);
-			}
-			iterator end()
-			{
-				return iterator(end_it);
-			}
+			auto begin()		{ return iterator<value_type>(begin_it); }
+			auto end()			{ return iterator<value_type>(end_it); }
+			auto begin() const	{ return iterator<const value_type>(begin_it); }
+			auto end() const	{ return iterator<const value_type>(end_it); }
 			size_t size() const { return std::distance(begin_it, end_it); }
 		};
 
@@ -1072,15 +1055,17 @@ namespace alg
 			CONT cont;
 			MEM_PTR ptr;
 
-			using value_type = std::remove_cvref_t<decltype((*cont.begin()).*ptr)>;
+			using value_type = std::remove_reference_t<decltype((*cont.begin()).*ptr)>;
 			using cont_iterator_type = std::remove_cvref_t<CONT>::iterator;
 
 			SelectMemberIt(CONT cont, MEM_PTR ptr) : cont(std::forward<CONT>(cont)), ptr(ptr) {}
 
+			template<typename ItValueType>
 			struct iterator
 			{
-				using iterator_category = std::forward_iterator_tag;
-				using value_type = value_type;
+				//	idea with ItValueType - its either `const value_type` or just `value_type` - deriving two iterators
+				using iterator_category = cont_iterator_type::iterator_category;
+				using value_type = ItValueType;
 				cont_iterator_type  it;
 				MEM_PTR ptr;
 
@@ -1089,27 +1074,23 @@ namespace alg
 
 				iterator(cont_iterator_type it, MEM_PTR ptr) : it(it), ptr(ptr) {}
 
-				bool operator==(const iterator& other) const { return it == other.it; }
-				bool operator!=(const iterator& other) const { return it != other.it; }
 				iterator& operator++() { ++it; return *this; }
 				iterator& operator++(int) { it++; return *this; }
 				iterator& operator--() { --it; return *this; }
 				iterator& operator--(int) { it--; return *this; }
-				reference  operator*() { return (*it).*ptr; }
-				pointer   operator->() { return &(*it).*ptr; }
-				bool	  operator<(const iterator& other) { return it < other.it; }
+				reference  operator*() const { return (*it).*ptr; }
+				pointer   operator->() const { return &(*it).*ptr; }
+				bool operator==(const instance_of<iterator> auto& other) const { return it == other.it; }
+				bool operator!=(const instance_of<iterator> auto& other) const { return it != other.it; }
 
 				cont_iterator_type base() { return it; }
 			};
 
-			iterator begin()
-			{
-				return iterator(cont.begin(), ptr);
-			}
-			iterator end()
-			{
-				return iterator(cont.end(), ptr);
-			}
+			auto begin()		{ return iterator<value_type>(cont.begin(), ptr); }
+			auto end()			{ return iterator<value_type>(cont.end(), ptr); }
+			auto begin() const	{ return iterator<const value_type>(cont.begin(), ptr); }
+			auto end() const	{ return iterator<const value_type>(cont.end(), ptr); }
+			size_t size() const { return std::distance(cont.begin(), cont.end()); }
 		};
 
 		auto begin(instance_of<Select1stIt> auto& val) { return val.begin(); }
@@ -1118,28 +1099,25 @@ namespace alg
 		auto end(instance_of<Select1stIt> auto& val) { return val.end(); }
 		auto end(instance_of<Select2ndIt> auto& val) { return val.end(); }
 		auto end(instance_of<SelectMemberIt> auto& val) { return val.end(); }
-	}	//namespace Details
+	}	//namespace details
 
-	//	to escape local begin(), end() definitions
-	auto begin_adl(auto& cont) { return begin(cont); }
-	auto end_adl(auto& cont) { return end(cont); }
 
 	template<typename CONT>
-	auto select1st(CONT&& cont) { return Details::Select1stIt<CONT, decltype(begin(cont))>(std::forward<CONT>(cont)); }
+	auto select1st(CONT&& cont) { return details::Select1stIt<CONT, decltype(begin(cont))>(std::forward<CONT>(cont)); }
 	template<typename IT>
-	auto select1st(IT begin_it, IT end_it) { return Details::Select1stIt<Details::empty_type, IT>(begin_it, end_it); }
+	auto select1st(IT begin_it, IT end_it) { return details::Select1stIt<details::empty_type, IT>(begin_it, end_it); }
 
 	template<typename CONT>
-	auto select2nd(CONT&& cont) { return Details::Select2ndIt<CONT, decltype(std::begin(cont))>(std::forward<CONT>(cont)); }
+	auto select2nd(CONT&& cont) { return details::Select2ndIt<CONT, decltype(std::begin(cont))>(std::forward<CONT>(cont)); }
 	template<typename IT>
-	auto select2nd(IT begin_it, IT end_it) { return Details::Select2ndIt<Details::empty_type, IT>(begin_it, end_it); }
+	auto select2nd(IT begin_it, IT end_it) { return details::Select2ndIt<details::empty_type, IT>(begin_it, end_it); }
 
 	template<typename CONT, typename MEM_PTR>
 	auto select_member(CONT&& cont, MEM_PTR ptr)
 	{
 		//	For decaying container, CONT will be just CONT, and container will be moved into SelectMemberIt
 		//	For regular reference to container, CONT will be CONT& and reference will be stored instead
-		return Details::SelectMemberIt<CONT, MEM_PTR>( std::forward<CONT>(cont), ptr);
+		return details::SelectMemberIt<CONT, MEM_PTR>( std::forward<CONT>(cont), ptr);
 	}
 
 	template<typename U, typename URBG>
