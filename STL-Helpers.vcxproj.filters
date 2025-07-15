@@ -15,7 +15,16 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="LINQ.cpp">
+    <ClCompile Include="IsInstanceOfTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LINQTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LockFreeFixedSizeHashmap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -24,6 +33,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="STLHelpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IsInstanceOf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LockFreeFixedSizeHashmap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

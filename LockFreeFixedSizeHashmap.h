@@ -3,6 +3,7 @@
 #include <bit>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -33,6 +34,8 @@ namespace details {
 		static constexpr size_t BitMaskLen = (NodesMax + BitmaskBits - 1) / BitmaskBits;
 
 	public:
+		static constexpr size_t NodesMax = NodesMax;
+
 		FixedAllocator()
 		{
 			//	last byte of free_bitmask should have 1111...0000000 filled to mark unavailable space
@@ -74,6 +77,7 @@ namespace details {
 			size_t bitmask_idx = idx / BitmaskBits;
 			size_t bitmask_bit = idx % BitmaskBits;
 			BitmaskType mask = BitmaskType(1) << bitmask_bit;
+			assert((free_bitmask[bitmask_idx] & mask) != 0);
 
 			free_bitmask[bitmask_idx] &= ~mask;
 		}
@@ -129,7 +133,7 @@ public:
 		std::fill(buckets.begin(), buckets.end(), EmptyBucketTag);
 	}
 
-	void store(const K& key, V&& value)
+	void store(const K& key, auto&& value) requires(std::is_same_v<std::decay_t<decltype(value)>, V>)
 	{
 		size_t bucket_idx = std::hash<K>()(key) % BucketsNum;
 
@@ -157,7 +161,7 @@ public:
 		//	alloc new node, by doing linked list (new node enters first)
 		node_idx = node_allocator.alloc();
 		Node& node = nodes[node_idx];
-		new (&node) Node();
+		node.placement_new();
 
 		node.version.fetch_add(1, std::memory_order_acq_rel);
 		node.key = key;
@@ -180,7 +184,8 @@ public:
 		//	in the broken chain due to deleted nodes.
 		for (int tries = 0; tries < 50; ++tries)
 		{
-			size_t node_idx = buckets[bucket_idx].load(std::memory_order_acquire);
+			size_t root_node_idx = buckets[bucket_idx].load(std::memory_order_acquire);
+			size_t node_idx = root_node_idx;
 			while (node_idx != EmptyBucketTag)
 			{
 				Node& node = nodes[node_idx];
@@ -208,7 +213,7 @@ public:
 				size_t after_version = node.version.load(std::memory_order_acquire);
 				if (before_version != after_version)
 				{
-					result = {};
+					result = std::nullopt;
 
 					goto l_next_try;	//	can't trust information in this node anymore, retrying
 				}
@@ -217,7 +222,7 @@ public:
 				return result;
 			}
 
-			if(node_idx != buckets[bucket_idx].load(std::memory_order_acquire))
+			if(root_node_idx != buckets[bucket_idx].load(std::memory_order_acquire))
 				goto l_next_try;	//	root bucket node has changed, best to reread new chain
 
 			//	no such key
@@ -260,7 +265,9 @@ public:
 
 				//	now this node is lose
 				node.version.fetch_add(1, std::memory_order_acq_rel);
+				node.~Node();
 				node.has_value = false;
+				node.next_node = EmptyBucketTag;
 				node.version.fetch_add(1, std::memory_order_acq_rel);
 				node_allocator.free(node_idx);
 
@@ -285,7 +292,16 @@ private:
 		bool has_value = false;
 		K key;
 		V value;
+
+		//	placement new of parts of the struct only, we cannot ask version constructor to run - it'd reset the version to zero
+		//	instead, we will initialize only user data
+		void placement_new()
+		{
+			new (&key) K;
+			new (&value) V;
+		}
 	};
+
 
 	//static constexpr size_t ChunkSizePow2 = std::bit_ceil(ChunkSize);
 
