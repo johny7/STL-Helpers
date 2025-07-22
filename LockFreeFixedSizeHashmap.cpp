@@ -6,11 +6,10 @@
 #include <algorithm>
 
 // 1. Set up the random number generator and distribution
-static std::random_device rd;
-static std::mt19937 gen(rd()); // Mersenne Twister engine
+static std::mt19937 gen(std::random_device{}()); // Mersenne Twister engine
 static std::uniform_int_distribution<> dis(1, 1000); // Numbers between 1 and 1000
 
-#define SYNC_START_THREADS(COUNT)  {++start_counter; while (start_counter != COUNT) _mm_pause();}
+#define SYNC_START_THREADS()  {--start_counter; while (start_counter != 0) _mm_pause();}
 
 std::vector<int> random_keys(int n = 100)
 {
@@ -21,12 +20,34 @@ std::vector<int> random_keys(int n = 100)
 	return std::vector<int>(std::from_range, random_numbers);
 }
 
+template<size_t ... Idx>
+auto spawn_n_of_h(auto lambda, std::index_sequence<Idx...> )
+{
+	return std::array<std::jthread, sizeof...(Idx)>{ (Idx, std::jthread{ lambda }) ... };
+}
+
+template<int N>
+auto spawn_n_of(auto lambda)
+{
+	return spawn_n_of_h(std::move(lambda), std::make_index_sequence<N>());
+}
+
+
 void assert_true(bool res)
 {
 	if (!res)
 	{
 		_CrtDbgBreak();
 		throw std::runtime_error(std::format("lock_free_hash_map_tests: Expected true"));
+	}
+}
+
+void assert_false(bool res)
+{
+	if (res)
+	{
+		_CrtDbgBreak();
+		throw std::runtime_error(std::format("lock_free_hash_map_tests: Expected false"));
 	}
 }
 
@@ -87,10 +108,12 @@ void test_basic_writes()
 {
 	LockFreeFixedSizeHashMap <int, int, 100> hmap;
 	auto keys = random_keys();
-	std::atomic<int> start_counter{};
+
+	constexpr size_t c_num_of_reading_threads = 5;
+	std::atomic<int> start_counter = c_num_of_reading_threads + 1;
 
 	std::jthread thr1{ [&, keys=keys] mutable {
-		SYNC_START_THREADS(2);
+		SYNC_START_THREADS();
 		for (int repeat = 0; repeat < 5; ++repeat)
 		{
 			for (int key : keys)
@@ -100,8 +123,9 @@ void test_basic_writes()
 				hmap.store(key, -1);
 		}
 	}};
-	std::jthread thr2{ [&, keys = keys] mutable {
-		SYNC_START_THREADS(2);
+
+	auto reader_threads = spawn_n_of<c_num_of_reading_threads>([&, keys = keys] mutable {
+		SYNC_START_THREADS();
 		for(int repeat = 0; repeat < 5; ++repeat)
 		{
 			std::ranges::shuffle(keys, gen);
@@ -114,7 +138,7 @@ void test_basic_writes()
 				assert_is_among(*val, { key * key, -1 });
 			}
 		}
-	}};
+	});
 }
 
 //	test - recreating key
@@ -123,10 +147,10 @@ void test_basic_writes()
 void test_add_del()
 {
 	LockFreeFixedSizeHashMap <int, int, 100> hmap;
-	std::atomic<int> start_counter{};
+	std::atomic<int> start_counter = 2;
 
 	std::jthread thr1{ [&] mutable {
-		SYNC_START_THREADS(2);
+		SYNC_START_THREADS();
 		for (int repeat = 0; repeat < 1000; ++repeat)
 		{
 			hmap.store(1, repeat+1);
@@ -135,8 +159,9 @@ void test_add_del()
 			hmap.remove(1);
 		}
 	}};
+
 	std::jthread thr2{ [&] mutable {
-		SYNC_START_THREADS(2);
+		SYNC_START_THREADS();
 		int last_collected = 0;
 		for (int repeat = 0; repeat < 5000; ++repeat)
 		{
@@ -150,6 +175,7 @@ void test_add_del()
 	}};
 }
 
+//	test - quickly updating the same bucket - reader should be able to read unaffected node
 void test_reinsert_same_bucket()
 {
 	//	specially selected keys so they differ but fall into the same bucket
@@ -158,22 +184,21 @@ void test_reinsert_same_bucket()
 
 	LockFreeFixedSizeHashMap <int, int, 2> hmap;
 	hmap.store(key_query, 42);
-	std::atomic<int> start_counter{};
+	std::atomic<int> start_counter = 2;
 
 	std::jthread thr1{ [&] mutable {
-		SYNC_START_THREADS(2);
+		SYNC_START_THREADS();
 		for (int repeat = 0; repeat < 1000; ++repeat)
 		{
 			hmap.store(key_reinsert, repeat);
-			if (dis(gen) % 3 == 0)
-				std::this_thread::yield();	//	should givabreak periodically
+			_mm_pause();
 			hmap.remove(key_reinsert);
-			std::this_thread::yield();
+			_mm_pause();
 		}
 	}};
 
 	std::jthread thr2{ [&] mutable {
-		SYNC_START_THREADS(2);
+		SYNC_START_THREADS();
 		for (int repeat = 0; repeat < 2000; ++repeat)
 		{
 			std::optional<int> value = hmap.read(key_query);
@@ -189,27 +214,20 @@ void test_reinsert_same_bucket()
 void test_other_key_writer_does_not_affect_reader()
 {
 	int key_query = -1;	//	guaranteed to be off the random generator range
+	constexpr size_t c_num_of_reading_threads = 5;
+	std::atomic<int> start_counter = c_num_of_reading_threads + 1;
 
 	LockFreeFixedSizeHashMap <int, int, 15> hmap;
 	hmap.store(key_query, 42);
-	std::atomic<int> start_counter{};
 
 	std::jthread thr1{ [&] mutable {
-		SYNC_START_THREADS(2);
+		SYNC_START_THREADS();
 		std::vector<int> inserted;
-		inserted.reserve(10);
 		for (int repeat = 0; repeat < 1000; ++repeat)
 		{
-			if (inserted.size() < 10)
+			if (inserted.size() == 10)
 			{
-			}
-			else if (inserted.size() < 15)
-			{
-				hmap.remove(inserted[inserted.size() - 10]);
-			}
-			else
-			{
-				hmap.remove(inserted[5]);
+				hmap.remove(inserted[0]);
 				inserted.erase(inserted.begin());
 			}
 
@@ -219,29 +237,118 @@ void test_other_key_writer_does_not_affect_reader()
 		}
 	}};
 
-	std::jthread thr2{ [&] mutable {
-		SYNC_START_THREADS(2);
+	auto reader_threads = spawn_n_of<c_num_of_reading_threads>([&] mutable {
+		SYNC_START_THREADS();
 		for (int repeat = 0; repeat < 2000; ++repeat)
 		{
 			std::optional<int> value = hmap.read(key_query);
 			assert_true(value.has_value());
 			assert_eq(*value, 42);
 		}
-	}};
+	});
 }
 
 
-//	test3
+//	test - writes and deletes all sort of keys but older keys must still be readable
+//		thr1 - writes and deletes lots of random stuff, keeping the list of inserted
+//		thr2 - checks the second half of the keys if still readable
+void test_other_key_writer_does_not_affect_reader2()
+{
+	//	large enough, so writer thread does not delete all the keys in the queue, while reader tries to check one key
+	constexpr size_t c_elements_num = 1000;
+	constexpr size_t c_num_of_reading_threads = 5;
+	std::atomic<int> start_counter = c_num_of_reading_threads + 1;
+
+	LockFreeFixedSizeHashMap <int, int, c_elements_num> hmap;
+	std::vector<int> inserted;
+
+	std::jthread thr1{ [&] mutable {
+		//	prefill
+		inserted = random_keys(c_elements_num);
+		for(auto num : inserted)
+			hmap.store(num, num * num);
+
+		SYNC_START_THREADS();
+		for (int repeat = 0; repeat < 10000; ++repeat)
+		{
+			bool removed = hmap.remove(inserted[0]);
+			assert_true(removed);
+			inserted.erase(inserted.begin());
+
+			int num;
+			while(true)
+			{
+				//	prevent duplicates, so remove always succeed
+				num = dis(gen);
+				if (!std::ranges::contains(inserted, num))
+					break;
+			}
+
+			hmap.store(num, num * num);
+			inserted.push_back(num);
+		}
+	} };
+
+	auto reader_threads = spawn_n_of<c_num_of_reading_threads>([&] mutable {
+		SYNC_START_THREADS();
+		for (int repeat = 0; repeat < 20000; ++repeat)
+		{
+			std::uniform_int_distribution<> dis(c_elements_num / 2, c_elements_num - 2);
+			int key = inserted[dis(gen)];
+
+			std::optional<int> value = hmap.read(key);
+			assert_true(value.has_value());
+			assert_eq(*value, key* key);
+		}
+	} );
+}
+
+//	test - reading non-existing key should always complete
 //		thr1 - writes and deletes lot of random stuff
 //		thr2 - reads non-existing key - always empty
-void lfhm3()
+void test_non_existing_key()
 {
+	//	large enough, so writer thread does not delete all the keys in the queue, while reader tries to check one key
+	constexpr size_t c_elements_num = 1000;
+	constexpr size_t c_num_of_reading_threads = 5;
+	std::atomic<int> start_counter = c_num_of_reading_threads + 1;
 
+	LockFreeFixedSizeHashMap <int, int, c_elements_num> hmap;
+
+	std::jthread thr1{ [&] mutable {
+		SYNC_START_THREADS();
+		std::vector<int> inserted;
+		for (int repeat = 0; repeat < 10000; ++repeat)
+		{
+			if(inserted.size() == c_elements_num)
+			{
+				hmap.remove(inserted[0]);
+				inserted.erase(inserted.begin());
+			}
+
+			int num = dis(gen);	//	duplicates are fine
+			hmap.store(num, num * num);
+			inserted.push_back(num);
+		}
+	} };
+
+	auto reader_threads = spawn_n_of<c_num_of_reading_threads>( [&] mutable {
+		SYNC_START_THREADS();
+		for (int repeat = 0; repeat < 20000; ++repeat)
+		{
+			//	negative is guaranteed missing key
+			int key = -dis(gen);
+
+			std::optional<int> value = hmap.read(key);
+			assert_false(value.has_value());
+		}
+	} );
 }
+
 
 //	test4
 //		thr1 - writes set of keys, waits a bit and then shuffles and deletes all the keys
-//		thr2 - keeps re-reading the same set of keys, amount should drop from N to 0
+//		thr2 - keeps iterating and counts number of keys encountered, should drop from N-ish to 0
 void lfhm4()
 {
 
@@ -249,14 +356,12 @@ void lfhm4()
 
 void lock_free_hash_map_tests()
 {
-	test_other_key_writer_does_not_affect_reader();
-	return;
-
 	test_allocator();
 	test_basic_writes();
 	test_add_del();
 	test_reinsert_same_bucket();
 	test_other_key_writer_does_not_affect_reader();
-	lfhm3();
+	test_other_key_writer_does_not_affect_reader2();
+	test_non_existing_key();
 	lfhm4();
 }

@@ -9,7 +9,6 @@
 #include <stdexcept>
 #include <immintrin.h>
 
-#include <vector>
 /*
 * Hash map, tailored to be used over shared memory. Properties are:
 *  - Requires trivial Key/Value types (i.e. PODs, containing no allocations or any other pointers into memory)
@@ -128,13 +127,10 @@ class LockFreeFixedSizeHashMap
 	static constexpr size_t EmptyBucketTag = std::numeric_limits<size_t>::max();
 	static constexpr size_t BucketsNum = details::next_prime(MaxElems * 2);
 
-	inline static std::vector<int> __addremove_nodes;
-
 public:
 	LockFreeFixedSizeHashMap()
 	{
 		std::fill(buckets.begin(), buckets.end(), EmptyBucketTag);
-		__addremove_nodes.clear();
 	}
 
 	void store(const K& key, auto&& value) requires(std::is_same_v<std::decay_t<decltype(value)>, V>)
@@ -156,7 +152,6 @@ public:
 				//	mark version as even (readers good to go (but may need to reread))
 				node.version.fetch_add(1, std::memory_order_acq_rel);
 
-				__addremove_nodes.push_back(node_idx);
 				return;
 			}
 
@@ -168,6 +163,9 @@ public:
 		//	This way, readers can navigate existing chain down safely - new node will just stay invisible
 		node_idx = node_allocator.alloc();
 		Node& node = nodes[node_idx];
+		assert(node.part_of_bucket == EmptyBucketTag);
+		assert(node.next_node == EmptyBucketTag);
+		
 		node.placement_new();
 
 		node.version.fetch_add(1, std::memory_order_acq_rel);
@@ -176,7 +174,6 @@ public:
 		node.next_node = buckets[bucket_idx].load(std::memory_order_relaxed);
 		node.part_of_bucket = bucket_idx;
 		node.version.fetch_add(1, std::memory_order_acq_rel);
-		__addremove_nodes.push_back(node_idx);
 
 		//	At this point we got new node that correctly looks at our root node as next. So readers are oblivious to the addition and
 		//	can navigate existing chain. No existing nodes are updated.
@@ -187,9 +184,6 @@ public:
 	template<typename CompatibleK>
 	std::optional<V> read(const CompatibleK& key)
 	{
-		static std::vector<int> __visited_nodes;
-		__visited_nodes.clear();
-
 		std::optional<V> result;
 
 		size_t bucket_idx = std::hash<CompatibleK>()(key) % BucketsNum;
@@ -225,20 +219,15 @@ public:
 				return result;
 			}
 
-			__visited_nodes.push_back(-1);
-
 			size_t node_idx = root_node_idx;
 			while (node_idx != EmptyBucketTag)
 			{
-				__visited_nodes.push_back(node_idx);
-
 				//	This part handles only node overwrites, so as far as we found the correct node - we just read and pray it was not overwritten.
 				Node& node = nodes[node_idx];
 				size_t before_version = node.version.load(std::memory_order_acquire);
 				if (before_version % 2 == 1)
 				{
 					//	node is being altered, retrying
-					__visited_nodes.push_back(-2);
 					do_pause();
 					continue;
 				}
@@ -246,7 +235,6 @@ public:
 				if (node.part_of_bucket != bucket_idx)
 				{
 					//	node was deleted and reused, we got derailed - has to start from the root
-					__visited_nodes.push_back(-3);
 					do_pause();
 					goto l_restart_from_root;
 				}
@@ -259,7 +247,6 @@ public:
 				if (node.key != key)
 				{
 					const size_t next_node_idx = node.next_node;
-					__visited_nodes.push_back(-4);
 
 					//	consuming data from this node is done, we made a decision
 					//	however we've been assuming so far it was intact
@@ -267,20 +254,17 @@ public:
 					size_t after_version = node.version.load(std::memory_order_acquire);
 					if (before_version == after_version)
 					{
-						__visited_nodes.push_back(-5);
 						node_idx = next_node_idx;
 						continue;
 					}
 					
 					//	if node was updated (say, overwritten) - we need to reread it again
-					__visited_nodes.push_back(-6);
 					do_pause();
 					continue;
 				}
 
 				//	we reach here if node was found, loading data
 				result = node.value;
-				__visited_nodes.push_back(-7);
 
 				//	now, same check were we reading over the same version of the node?
 				size_t after_version = node.version.load(std::memory_order_acquire);
@@ -292,7 +276,6 @@ public:
 				}
 
 				//	nope, version changed - rereading the node, thus we keep node_idx the same
-				__visited_nodes.push_back(-8);
 				do_pause();
 				continue;
 			}
@@ -335,56 +318,36 @@ public:
 			Node& node = nodes[node_idx];
 			if (node.key == key)
 			{
-				//	First, mark root node - we're deleting (important for readers).
-				//	Idea is simple, reader in general have no good technic to detect if it was derailed and might be in the chain of deleted nodes.
-				//	But reader can reliably detect if root node has been updated since.
-				//	We would update the version of root node if it was deleted or was linking to deleted node.
-				//	But now let's trigger version change for all other scenarios.
-				root_node.version.fetch_add(1, std::memory_order_acq_rel);
-
-				//	relink parent node
+				//	Relink parent node, now it points to the node after. For reader, the chain is in correct state, and current node looks already deleted.
+				//	If reader didn't yet manage to read old `next_node` link, futher changes will be transparent.
+				//	Note, that readed will have to reread the parent node if it read it during it's update and later detected version change.
 				size_t next_node_idx = node.next_node;
 				if (previous_node_idx != EmptyBucketTag)
 				{
 					Node& previous_node = nodes[previous_node_idx];
 
-					//	Dont update version twice if it's the root node
-					if (previous_node_idx == root_node_idx)
-					{
-						previous_node.next_node = next_node_idx;
-					}
-					else
-					{
-						previous_node.version.fetch_add(1, std::memory_order_acq_rel);
-						previous_node.next_node = next_node_idx;
-						previous_node.version.fetch_add(1, std::memory_order_acq_rel);
-					}
-
-					__addremove_nodes.push_back(-(int)previous_node_idx - 10000);
+					previous_node.version.fetch_add(1, std::memory_order_acq_rel);
+					previous_node.next_node = next_node_idx;
+					previous_node.version.fetch_add(1, std::memory_order_acq_rel);
 				}
 				else
 				{
-					//	Here we know that being deleted node is the root node. The version is already increased
-					//	Update bucket
+					//	Here we know that being deleted node is the root node.
 					assert(root_node_idx == node_idx);
+					//	Update bucket
 					buckets[bucket_idx].store(next_node_idx, std::memory_order_release);
 				}
 
-				//	Now, mark node as destroyed (avoid double versioning as well)
-				if(root_node_idx != node_idx)
-					node.version.fetch_add(1, std::memory_order_acq_rel);
+				//	Now, mark node as destroyed
+				//	In case if client is reading this node, it might lose the ability to continue, because the next_node info was lost (or even reused).
+				//	In such case, client should detect it derailed seeing `part_of_bucket` mismatch.
+				//	In the edge case when `part_of_bucket` coincides after deletion and reusing - this is the scenario when reader looking at the node that was moved
+				//	back to the beginning of the chain - safe to keep using it.
+				node.version.fetch_add(1, std::memory_order_acq_rel);
 				node.~Node();
 				node.part_of_bucket = EmptyBucketTag;
 				node.next_node = EmptyBucketTag;
-				if (root_node_idx != node_idx)
-					node.version.fetch_add(1, std::memory_order_acq_rel);
-
-				__addremove_nodes.push_back(-(int)node_idx);
-
-				//	Last, mark root node that we done deleting - update version of the bucket's root node to even number again
-				//	Note we update even if it is the deleted node and no longer bucket's root - reader will be still tracking this node as root
-				root_node.version.fetch_add(1, std::memory_order_acq_rel);
-
+				node.version.fetch_add(1, std::memory_order_acq_rel);
 				node_allocator.free(node_idx);
 
 				return true;
