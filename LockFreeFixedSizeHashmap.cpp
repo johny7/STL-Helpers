@@ -200,9 +200,16 @@ void test_other_key_writer_does_not_affect_reader()
 		inserted.reserve(10);
 		for (int repeat = 0; repeat < 1000; ++repeat)
 		{
-			if (inserted.size() == 10)
+			if (inserted.size() < 10)
 			{
-				hmap.remove(inserted[0]);
+			}
+			else if (inserted.size() < 15)
+			{
+				hmap.remove(inserted[inserted.size() - 10]);
+			}
+			else
+			{
+				hmap.remove(inserted[5]);
 				inserted.erase(inserted.begin());
 			}
 
@@ -242,8 +249,8 @@ void lfhm4()
 
 void lock_free_hash_map_tests()
 {
-	//test_other_key_writer_does_not_affect_reader();
-	//return;
+	test_other_key_writer_does_not_affect_reader();
+	return;
 
 	test_allocator();
 	test_basic_writes();
