@@ -17,7 +17,10 @@ std::vector<int> random_keys(int n = 100)
 	while (random_numbers.size() < n)
 		random_numbers.insert(dis(gen));
 
-	return std::vector<int>(std::from_range, random_numbers);
+	std::vector<int> ret(std::from_range, random_numbers);
+	std::ranges::shuffle(ret, gen);
+	
+	return ret;
 }
 
 template<size_t ... Idx>
@@ -346,13 +349,105 @@ void test_non_existing_key()
 }
 
 
-//	test4
+//	test - visit test, prefill some amount of nodes, then making sure those are all visited exactly once
+//		thr1 - prefills, then starts writing and removing noise
+//		thr2 - continously visits and checks if all nodes were visited once
+void test_visit_in_noise()
+{
+	constexpr size_t c_elements_num = 1000;
+	constexpr size_t c_num_of_reading_threads = 5;
+	std::atomic<int> start_counter = c_num_of_reading_threads + 1;
+
+	LockFreeFixedSizeHashMap <int, int, c_elements_num + 100> hmap;
+
+	std::jthread thr1{ [&] mutable {
+		//	prefill, keys from -1 to -100 are the ones to keep visiting
+		for (int i = -100; i <= -1; ++i)
+			hmap.store(i, i);
+
+		SYNC_START_THREADS();
+		std::vector<int> inserted;
+		for (int repeat = 0; repeat < 10000; ++repeat)
+		{
+			if (inserted.size() == c_elements_num)
+			{
+				int idx_to_remove = rand() % c_elements_num;
+				hmap.remove(inserted[idx_to_remove]);
+				inserted.erase(inserted.begin() + idx_to_remove);
+			}
+
+			int num = dis(gen);	//	duplicates are fine
+			hmap.store(num, 0);
+			inserted.push_back(num);
+		}
+	} };
+
+	auto reader_threads = spawn_n_of<c_num_of_reading_threads>([&] mutable {
+		SYNC_START_THREADS();
+		for (int repeat = 0; repeat < 100; ++repeat)
+		{
+			std::set<int> visited;
+			hmap.visit([&](const std::pair<int, int>& keyval) {
+				if (keyval.first < 0)
+					assert_true(visited.insert(keyval.first).second);
+				});
+
+			int expected_val = -100;
+			for (auto val : visited)
+				assert_eq(val, expected_val++);
+		}
+	});
+}
+
+// test - visit friendly with erasures
 //		thr1 - writes set of keys, waits a bit and then shuffles and deletes all the keys
 //		thr2 - keeps iterating and counts number of keys encountered, should drop from N-ish to 0
-void lfhm4()
+void test_visit_vs_deletes()
 {
+	constexpr size_t c_elements_num = 77;
+	constexpr size_t c_num_of_reading_threads = 5;
+	std::atomic<int> start_counter = c_num_of_reading_threads + 1;
 
+	LockFreeFixedSizeHashMap <int, int, c_elements_num> hmap;
+
+	std::jthread thr1{ [&] mutable {
+		//	prefill
+		std::vector<int> nums = random_keys(c_elements_num);
+		for (int n : nums)
+			hmap.store(n, 32);
+
+		SYNC_START_THREADS();
+		for (int n : nums)
+			hmap.remove(n);
+	} };
+
+	auto reader_threads = spawn_n_of<c_num_of_reading_threads>([&] mutable {
+		std::vector<int> visited_history;
+		visited_history.reserve(100);
+
+		SYNC_START_THREADS();
+		for (int repeat = 0; repeat < 100; ++repeat)
+		{
+			int visited = 0;
+			hmap.visit([&](const std::pair<int, int>& keyval) {
+				++visited;
+			});
+
+			//	Kernel scheduler is not predictive, it might yield writer's thread and reader will be running over abandoned hmap,
+			//	this_thread::yield() didn't help because there was no guarantee that writer thread will be picked next.
+			//	However putting thread on sleep resets the priority correctly.
+			if (!visited_history.empty() && visited > 0 && visited_history.back() == visited)
+				std::this_thread::sleep_for( std::chrono::microseconds(10) );
+
+			visited_history.push_back(visited);
+		}
+
+		assert_true(visited_history[0] <= c_elements_num);
+		assert_eq(visited_history.back(), 0);
+		assert_true(std::is_sorted(visited_history.rbegin(), visited_history.rend()));
+	});
 }
+
 
 void lock_free_hash_map_tests()
 {
@@ -363,5 +458,6 @@ void lock_free_hash_map_tests()
 	test_other_key_writer_does_not_affect_reader();
 	test_other_key_writer_does_not_affect_reader2();
 	test_non_existing_key();
-	lfhm4();
+	test_visit_in_noise();
+	test_visit_vs_deletes();
 }

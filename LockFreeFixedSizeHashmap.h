@@ -17,7 +17,7 @@
 *  - Lock free
 *  - All operations are amortized O(1), however in practice performance will start dropping once container is nearly full
 *  - Throws on overfill
-*  - Supports store (writer), remove (writer), read (reader/writer)
+*  - Supports store (writer), remove (writer), read (reader/writer), visit all nodes (reader/writer)
 */
 
 //	adapt your logging
@@ -187,13 +187,7 @@ public:
 		std::optional<V> result;
 
 		size_t bucket_idx = std::hash<CompatibleK>()(key) % BucketsNum;
-		auto do_pause = [wait_duration = 10]() mutable {
-			//	pause a bit
-			for (int i = 0; i < wait_duration; ++i)
-				_mm_pause();
-
-			wait_duration += 10;
-		};
+		auto do_pause = pause_closure();
 
 		//	Do full scan of the bucket.
 		// 
@@ -359,6 +353,46 @@ public:
 
 		return false;
 	}
+
+	template<typename F>	//	func(const std::pair<key, value>&)
+	void visit(F func)
+	{
+		//	Visit goes across all nodes only once, this might miss some of the newly inserted nodes.
+		//  Duplicates are possible if node was visited, deleted and then reinserted.
+		for (size_t node_idx = 0; node_idx < MaxElems; ++node_idx)
+		{
+			//	usual pattern, looking after odd version, version change and part_of_bucket value
+			auto do_pause = pause_closure();
+
+			while(true)
+			{
+				Node& node = nodes[node_idx];
+				size_t before_version = node.version.load(std::memory_order_acquire);
+				if (before_version % 2 == 1)
+				{
+					do_pause();
+					continue;
+				}
+
+				if (node.part_of_bucket == EmptyBucketTag)
+				{
+					//	empty node, skip..
+					break;
+				}
+
+				std::pair<K, V> pair = std::make_pair(node.key, node.value);
+
+				size_t after_version = node.version.load(std::memory_order_acquire);
+				if (before_version != after_version)
+					continue;
+
+				func(pair);
+
+				//	done reading this node
+				break;
+			}
+		}
+	}
 	
 private:
 	struct Node
@@ -380,6 +414,16 @@ private:
 			new (&value) V;
 		}
 	};
+
+	auto pause_closure() {
+		return [wait_duration = 10]() mutable {
+			//	pause a bit
+			for (int i = 0; i < wait_duration; ++i)
+				_mm_pause();
+
+			wait_duration += 10;
+			};
+	}
 
 
 	//static constexpr size_t ChunkSizePow2 = std::bit_ceil(ChunkSize);
