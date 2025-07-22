@@ -20,9 +20,6 @@
 *  - Supports store (writer), remove (writer), read (reader/writer), visit all nodes (reader/writer)
 */
 
-//	adapt your logging
-#define LOGGING(...) std::cout << std::format(__VA_ARGS__) << std::endl
-
 namespace details {
 	//	Memory-less fixed size allocator of size NodesMax
 	//	each chunk is of ChunkSize. Returns available indexes (i.e. does not own or manage the memory itself).
@@ -274,25 +271,6 @@ public:
 				continue;
 			}
 
-			//	So the loop above works only if no deletes were occured, but what if?
-			//	Then we could be skipping nodes, loose tail etc.
-			//	How can we detect that? Now we are marking bucket's root node as updated - let's verify that
-			/*
-			if (root_node_idx != buckets[bucket_idx].load(std::memory_order_acquire))
-			{
-				//	root bucket node has changed, probably deletion has happened, best to reread new chain
-				do_pause();
-				continue;
-			}
-
-			if(root_node_version != root_node.version.load(std::memory_order_acquire))
-			{
-				//	root bucket version node has changed, probably deletion has happened, best to reread new chain
-				do_pause();
-				continue;
-			}
-			*/
-
 			//	now we fair and square - scanned all, bucket was intact: no such key
 			result = std::nullopt;
 			return result;
@@ -425,12 +403,8 @@ private:
 			};
 	}
 
-
-	//static constexpr size_t ChunkSizePow2 = std::bit_ceil(ChunkSize);
-
 	alignas(64) std::array<std::atomic<size_t>, BucketsNum> buckets;	//	slot marked as EmptyBucketTag - empty
 	alignas(64) std::array<Node, MaxElems> nodes;
 	alignas(64) details::FixedAllocator<MaxElems> node_allocator;
 };
-
 
