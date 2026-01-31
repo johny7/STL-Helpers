@@ -185,58 +185,58 @@ namespace alg
 	template<typename T, typename U, typename V>
 	T clamp(T value, U min, V max)
 	{
-		return std::min( std::max(value, static_cast<T>(min)), static_cast<T>(max) );
+		return std::min(std::max(value, static_cast<T>(min)), static_cast<T>(max));
 	}
 
 	template<typename T>
 	T saturate(T value)
 	{
-		return std::min( std::max(value, static_cast<T>(0)), static_cast<T>(1) );
+		return std::min(std::max(value, static_cast<T>(0)), static_cast<T>(1));
 	}
 
 	template<typename T, typename U, typename V>
 	T lerp(T from, U to, V scale)
 	{
-		static_assert( std::is_floating_point_v<V>, "Scale should be able to represent [0-1]" );
+		static_assert(std::is_floating_point_v<V>, "Scale should be able to represent [0-1]");
 
-		return T( from * (1 - scale) + to * scale );
+		return T(from * (1 - scale) + to * scale);
 	}
 
 	template<typename T, typename U, typename V>
 	T scale(T value, U from, V to)
 	{
 		assert(to != from);
-		return T( (value - from) / (to - from) );
+		return T((value - from) / (to - from));
 	}
 
 	template<typename T>
 	T square(T value)
 	{
-		return value*value;
+		return value * value;
 	}
 
 	template<typename A1, typename ... ARGS>
 	A1 min(A1 arg1, ARGS ... args)
 	{
-		static_assert( sizeof... (ARGS) >= 1, "alg::min must have 2 args min");
+		static_assert(sizeof... (ARGS) >= 1, "alg::min must have 2 args min");
 		auto list = { static_cast<A1>(args)... };
-		
-		return std::min(arg1, *std::min_element(list.begin(), list.end()) );
+
+		return std::min(arg1, *std::min_element(list.begin(), list.end()));
 	}
 
 	template<typename A1, typename ... ARGS>
 	A1 max(A1 arg1, ARGS ... args)
 	{
-		static_assert( sizeof... (ARGS) >= 1, "alg::max must have 2 args min");
+		static_assert(sizeof... (ARGS) >= 1, "alg::max must have 2 args min");
 		auto list = { static_cast<A1>(args)... };
-		
-		return std::max(arg1, *std::max_element(list.begin(), list.end()) );
+
+		return std::max(arg1, *std::max_element(list.begin(), list.end()));
 	}
 
 	template<typename ... ARGS, typename COMPARATOR>
 	auto min_f(COMPARATOR f, ARGS ... args) -> typename std::tuple_element<0, std::tuple<ARGS...> >::type
 	{
-		static_assert( sizeof... (ARGS) >= 2, "alg::min_f must have 2 args min");
+		static_assert(sizeof... (ARGS) >= 2, "alg::min_f must have 2 args min");
 		typedef typename std::tuple_element<0, std::tuple<ARGS...> >::type A1;
 
 		auto list = { static_cast<A1>(args)... };
@@ -246,7 +246,7 @@ namespace alg
 	template<typename ... ARGS, typename COMPARATOR>
 	auto max_f(COMPARATOR f, ARGS ... args) -> typename std::tuple_element<0, std::tuple<ARGS...> >::type
 	{
-		static_assert( sizeof... (ARGS) >= 2, "alg::max_f must have 2 args min");
+		static_assert(sizeof... (ARGS) >= 2, "alg::max_f must have 2 args min");
 		typedef typename std::tuple_element<0, std::tuple<ARGS...> >::type A1;
 
 		auto list = { static_cast<A1>(args)... };
@@ -263,7 +263,7 @@ namespace alg
 	{
 		float mult = ::pow(10, precisionAfterPoint);
 
-		return (T)(floor(val*mult + 0.5) / mult);
+		return (T)(floor(val * mult + 0.5) / mult);
 	}
 
 	template<typename T>
@@ -280,7 +280,7 @@ namespace alg
 		std::set<EL> s;
 		for (auto& el : container)
 		{
-			if(is_exist(s, el))
+			if (is_exist(s, el))
 				return true;
 
 			s.insert(el);
@@ -294,7 +294,7 @@ namespace alg
 	consteval T pow(T val)
 	{
 		T result = val;
-		for(unsigned i = 1; i < ORDER; ++i)
+		for (unsigned i = 1; i < ORDER; ++i)
 			result *= val;
 		return result;
 	}
@@ -305,19 +305,19 @@ namespace alg
 		typename CONT::iterator trash = std::remove(cont.begin(), cont.end(), value);
 		const size_t value_number = cont.end() - trash;
 
-		if(value_number)
-			cont.erase( trash, cont.end() );
+		if (value_number)
+			cont.erase(trash, cont.end());
 
 		return value_number;
 	}
 
 	template<typename T, typename A>
-	size_t remove( std::list<T, A>& cont, const typename std::list<T, A>::value_type& value )
+	size_t remove(std::list<T, A>& cont, const typename std::list<T, A>::value_type& value)
 	{
 		size_t ret_val = 0;
-		for(auto obj_it = cont.begin(); obj_it != cont.end();  )
+		for (auto obj_it = cont.begin(); obj_it != cont.end(); )
 		{
-			if( *obj_it == value )
+			if (*obj_it == value)
 			{
 				obj_it = cont.erase(obj_it);
 				ret_val++;
@@ -330,18 +330,18 @@ namespace alg
 	}
 
 	template<typename T>
-	size_t remove(std::basic_string<T>&  str, const T* value)
+	size_t remove(std::basic_string<T>& str, const T* value)
 	{
 		size_t  amount = 0;
 
-		while(1)
+		while (1)
 		{
 			size_t pos = str.find(value);
 
-			if( pos == std::basic_string<T>::npos )
+			if (pos == std::basic_string<T>::npos)
 				break;
 
-			str.erase( pos, std::char_traits<T>::strlen(value) );
+			str.erase(pos, std::char_traits<T>::strlen(value));
 			++amount;
 		}
 
@@ -354,55 +354,55 @@ namespace alg
 		typename CONT::iterator trash = std::remove_if(cont.begin(), cont.end(), func);
 		const size_t value_number = unsigned(cont.end() - trash);
 
-		if(value_number)
-			cont.erase( trash, cont.end() );
+		if (value_number)
+			cont.erase(trash, cont.end());
 
 		return value_number;
 	}
 
 	template< typename K, typename V, typename P, typename A, typename PredicateT >
-	void remove_if( std::map<K, V, P, A>& items, const PredicateT& predicate ) 
+	void remove_if(std::map<K, V, P, A>& items, const PredicateT& predicate)
 	{
-		for( auto it = items.begin(); it != items.end(); )
-			if( predicate(*it) ) it = items.erase(it);
-				else ++it;
+		for (auto it = items.begin(); it != items.end(); )
+			if (predicate(*it)) it = items.erase(it);
+			else ++it;
 	}
 
 	template< typename K, typename V, typename P, typename A, typename PredicateT >
-	void remove_if( std::multimap<K, V, P, A>& items, const PredicateT& predicate ) 
+	void remove_if(std::multimap<K, V, P, A>& items, const PredicateT& predicate)
 	{
-		for( auto it = items.begin(); it != items.end(); )
-			if( predicate(*it) ) it = items.erase(it);
-				else ++it;
+		for (auto it = items.begin(); it != items.end(); )
+			if (predicate(*it)) it = items.erase(it);
+			else ++it;
 	}
 
 	template<typename T, typename IDXType>
-	void remove_indexes( T& vector, const IDXType& to_remove )
+	void remove_indexes(T& vector, const IDXType& to_remove)
 	{
 		auto vector_base = vector.begin();
 		typename T::size_type down_by = 0;
 
-		for( auto iter = to_remove.cbegin();
+		for (auto iter = to_remove.cbegin();
 			iter < to_remove.cend();
-			iter++, down_by++ )
+			iter++, down_by++)
 		{
 			typename T::size_type next = (iter + 1 == to_remove.cend()
 				? vector.size()
 				: *(iter + 1));
 
-			std::move( vector_base + *iter + 1,
+			std::move(vector_base + *iter + 1,
 				vector_base + next,
-				vector_base + *iter - down_by );
+				vector_base + *iter - down_by);
 		}
 
-		vector.erase( vector.begin() + (vector.size() - to_remove.size()), vector.end() );
+		vector.erase(vector.begin() + (vector.size() - to_remove.size()), vector.end());
 	}
 
 
 	template<typename CONT>
 	bool erase(CONT& cont, size_t index)
 	{
-		if(index >= cont.size())
+		if (index >= cont.size())
 			return false;
 
 		typename CONT::iterator  p = cont.begin();
@@ -433,13 +433,13 @@ namespace alg
 	template<typename K, typename V, typename P, typename A>
 	const V& map_get(const std::map<K, V, P, A>& cont, const K& key)
 	{
-		assert( is_exist(cont, key) );
+		assert(is_exist(cont, key));
 		return cont.find(key)->second;
 	}
 	template<typename K, typename V, typename P, typename A>
 	V& map_get(std::map<K, V, P, A>& cont, const K& key)
 	{
-		assert( is_exist(cont, key) );
+		assert(is_exist(cont, key));
 		return cont.find(key)->second;
 	}
 	template<typename K, typename V, typename Hasher, typename Keyeq, typename Alloc>
@@ -457,32 +457,32 @@ namespace alg
 
 
 	template<typename K, typename V, typename P, typename A>
-	const V&  map_get_def(const std::map<K, V, P, A>& cont, const K& key, const V& default_value = V())
+	const V& map_get_def(const std::map<K, V, P, A>& cont, const K& key, const V& default_value = V())
 	{
 		auto  p = cont.find(key);
-		if(p == cont.end())
+		if (p == cont.end())
 			return default_value;
-		
+
 		return p->second;
 	}
 	//	& specialization for 'nullptr'
 	template<typename K, typename V, typename P, typename A>
-	const V&  map_get_def(const std::map<K, V, P, A>& cont, const K& key, void* ptr)
+	const V& map_get_def(const std::map<K, V, P, A>& cont, const K& key, void* ptr)
 	{
 		return map_get_def(cont, key, (V)ptr);
 	}
 	template<typename K, typename V, typename Hasher, typename Keyeq, typename Alloc>
-	const V&  map_get_def(const std::unordered_map<K, V, Hasher, Keyeq, Alloc>& cont, const K& key, const V& default_value = V())
+	const V& map_get_def(const std::unordered_map<K, V, Hasher, Keyeq, Alloc>& cont, const K& key, const V& default_value = V())
 	{
 		auto  p = cont.find(key);
-		if(p == cont.end())
+		if (p == cont.end())
 			return default_value;
 
 		return p->second;
 	}
 	//	& specialization for 'nullptr'
 	template<typename K, typename V, typename Hasher, typename Keyeq, typename Alloc>
-	const V&  map_get_def(const std::unordered_map<K, V, Hasher, Keyeq, Alloc>& cont, const K& key, void* ptr)
+	const V& map_get_def(const std::unordered_map<K, V, Hasher, Keyeq, Alloc>& cont, const K& key, void* ptr)
 	{
 		return map_get_def(cont, key, (V)ptr);
 	}
@@ -513,12 +513,12 @@ namespace alg
 		return std::find(cont.begin(), cont.end(), obj);
 	}
 	template<typename K, typename V, typename A, typename C, typename T>
-	typename std::map<K,V,A,C>::iterator  find(std::map<K,V,A,C>& cont, const T& key)
+	typename std::map<K, V, A, C>::iterator  find(std::map<K, V, A, C>& cont, const T& key)
 	{
 		return cont.find(key);
 	}
 	template<typename K, typename V, typename A, typename C, typename T>
-	typename std::map<K,V,A,C>::const_iterator  find(const std::map<K,V,A,C>& cont, const T& key)
+	typename std::map<K, V, A, C>::const_iterator  find(const std::map<K, V, A, C>& cont, const T& key)
 	{
 		return cont.find(key);
 	}
@@ -553,7 +553,7 @@ namespace alg
 	}
 
 	template<typename CONTAINER, typename FUNC>
-	auto  find_if_a( CONTAINER& cont, FUNC func ) -> decltype(std::begin(cont))
+	auto  find_if_a(CONTAINER& cont, FUNC func) -> decltype(std::begin(cont))
 	{
 		typename CONTAINER::iterator p = find_if(cont, func);
 		assert(p != cont.end());
@@ -612,35 +612,35 @@ namespace alg
 
 
 	template<typename CONT, typename T>
-	bool insert( CONT& cont, T&& value )
+	bool insert(CONT& cont, T&& value)
 	{
-		cont.push_back( std::forward<T>(value) );
+		cont.push_back(std::forward<T>(value));
 		return true;
 	}
 
 	template<typename K, typename V, typename P, typename A, typename V1>
-	bool insert( std::map<K, V, P, A>& cont, V1&& value )
+	bool insert(std::map<K, V, P, A>& cont, V1&& value)
 	{
-		return cont.insert( std::forward<V1>( value ) ).second;
+		return cont.insert(std::forward<V1>(value)).second;
 	}
 
 	template<typename K, typename V, typename P, typename A, typename V1>
-	bool insert( std::multimap<K, V, P, A>& cont, V1&& value )
+	bool insert(std::multimap<K, V, P, A>& cont, V1&& value)
 	{
-		cont.insert( std::forward<V1>( value ) );
+		cont.insert(std::forward<V1>(value));
 		return true;
 	}
 
 	template<typename K, typename P, typename A, typename V1>
-	bool insert( std::set<K, P, A>& cont, V1&& value )
+	bool insert(std::set<K, P, A>& cont, V1&& value)
 	{
-		return cont.insert( std::forward<V1>( value ) ).second;
+		return cont.insert(std::forward<V1>(value)).second;
 	}
 
 	template<typename K, typename P, typename A, typename V1>
-	bool insert( std::multiset<K, P, A>& cont, V1&& value )
+	bool insert(std::multiset<K, P, A>& cont, V1&& value)
 	{
-		cont.insert( std::forward<V1>( value ) );
+		cont.insert(std::forward<V1>(value));
 		return true;
 	}
 
@@ -648,10 +648,10 @@ namespace alg
 	namespace details
 	{
 		template<typename T>
-		inline void reserve(T&  , size_t  ) {}
+		inline void reserve(T&, size_t) {}
 
 		template<typename T, typename A>
-		inline void reserve(std::vector<T,A>& cont, size_t alloc_size) 
+		inline void reserve(std::vector<T, A>& cont, size_t alloc_size)
 		{
 			cont.reserve(alloc_size);
 		}
@@ -660,7 +660,7 @@ namespace alg
 	template<typename SRC_CONTAINER, typename DST_CONTAINER>
 	bool copy(const SRC_CONTAINER& src, DST_CONTAINER& dst)
 	{
-		return copy_if( src, dst, [] (auto& ) { return true; } );
+		return copy_if(src, dst, [](auto&) { return true; });
 	}
 
 	template<typename SRC_CONTAINER, typename DST_CONTAINER, typename F>
@@ -669,16 +669,16 @@ namespace alg
 		details::reserve(dst, dst.size() + src.size());
 
 		bool ret_val = false;
-		for(typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end(); ++p)
+		for (typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end(); ++p)
 			ret_val = true, insert(dst, transform(*p));
 
 		return ret_val;
 	}
 
 	template<typename SRC_CONTAINER, typename DST_CONTAINER, typename PTR_TYPE>
-	auto copy(const SRC_CONTAINER& container, DST_CONTAINER& dst, PTR_TYPE member_ptr)->std::enable_if_t< std::is_member_object_pointer<PTR_TYPE>::value, bool >
+	auto copy(const SRC_CONTAINER& container, DST_CONTAINER& dst, PTR_TYPE member_ptr) -> std::enable_if_t< std::is_member_object_pointer<PTR_TYPE>::value, bool >
 	{
-		return copy(container, dst, [=](auto& val) { return val.*member_ptr; } );
+		return copy(container, dst, [=](auto& val) { return val.*member_ptr; });
 	}
 
 	template<typename SRC_CONTAINER, typename DST_CONTAINER, typename FUNC>
@@ -686,20 +686,20 @@ namespace alg
 	{
 		bool ret_val = false;
 
-		for(typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end(); ++p)
-			if( predicate(*p) )
+		for (typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end(); ++p)
+			if (predicate(*p))
 				ret_val = true, insert(dst, *p);
 
 		return ret_val;
 	}
 
 	template<typename SRC_CONTAINER, typename DST_CONTAINER>
-	bool move( SRC_CONTAINER& src, DST_CONTAINER& dst )
+	bool move(SRC_CONTAINER& src, DST_CONTAINER& dst)
 	{
 		bool ret_val = false;
 
-		for( typename SRC_CONTAINER::iterator p = src.begin(); p != src.end(); ++p )
-			ret_val = true, insert( dst, std::move(*p) );
+		for (typename SRC_CONTAINER::iterator p = src.begin(); p != src.end(); ++p)
+			ret_val = true, insert(dst, std::move(*p));
 
 		return ret_val;
 	}
@@ -709,8 +709,8 @@ namespace alg
 	template<typename CONT, typename PRED>
 	auto remove_duplicates(CONT& container, const PRED& pred) -> std::enable_if_t< !std::is_member_pointer<PRED>::value >
 	{
-		std::sort( std::begin(container), std::end(container), pred );
-		container.erase( std::unique(std::begin(container), std::end(container)), std::end(container) );
+		std::sort(std::begin(container), std::end(container), pred);
+		container.erase(std::unique(std::begin(container), std::end(container)), std::end(container));
 	}
 	/*
 
@@ -729,11 +729,11 @@ namespace alg
 */
 
 	template<typename CONT, typename CLASS_TYPE, typename MEM_TYPE>
-	void remove_duplicates(CONT& container, MEM_TYPE CLASS_TYPE::*member_ptr)
+	void remove_duplicates(CONT& container, MEM_TYPE CLASS_TYPE::* member_ptr)
 	{
 		using MEM_PTR = MEM_TYPE CLASS_TYPE::*;
 		using ElType = std::remove_reference_t<decltype(container[0])>;
-		static_assert( std::is_same<CLASS_TYPE, ElType>::value, "" );
+		static_assert(std::is_same<CLASS_TYPE, ElType>::value, "");
 
 		//	define predicate
 		struct Pred
@@ -752,7 +752,7 @@ namespace alg
 	{
 		bool ret_val = false;
 
-		for (typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end();  )
+		for (typename SRC_CONTAINER::const_iterator p = src.begin(); p != src.end(); )
 			if (predicate(*p))
 			{
 				ret_val = true;
@@ -771,9 +771,9 @@ namespace alg
 	auto sort(SRC_CONTAINER& container, PTR_TYPE obj_ptr, FUNC predicate = std::ranges::less()) -> std::enable_if_t< std::is_member_object_pointer<PTR_TYPE>::value >
 	{
 		return std::sort(container.begin(), container.end(), [=](auto& a, auto& b)
-		{
-			return predicate(a.*obj_ptr, b.*obj_ptr);
-		});
+			{
+				return predicate(a.*obj_ptr, b.*obj_ptr);
+			});
 	}
 	template<typename SRC_CONTAINER, typename FUNC>
 	auto sort(SRC_CONTAINER& container, FUNC predicate) -> std::enable_if_t< !std::is_member_object_pointer<FUNC>::value >
@@ -811,14 +811,14 @@ namespace alg
 	}
 
 	template<typename SRC_CONTAINER, typename T>
-	bool binary_search( SRC_CONTAINER& container, const T& val )
+	bool binary_search(SRC_CONTAINER& container, const T& val)
 	{
-		return std::binary_search( begin(container), end(container), val );
+		return std::binary_search(begin(container), end(container), val);
 	}
 	template<typename SRC_CONTAINER, typename T, typename FUNC>
 	bool binary_search(SRC_CONTAINER& container, const T& val, const FUNC& extract_value_functor)
 	{
-		using ContElType = typename std::remove_cv< typename std::remove_reference<decltype( *begin(container) )>::type >::type;
+		using ContElType = typename std::remove_cv< typename std::remove_reference<decltype(*begin(container))>::type >::type;
 		struct Predicate
 		{
 			Predicate(const FUNC& f_) : f(f_) {}
@@ -835,9 +835,9 @@ namespace alg
 
 
 	template<typename SRC_CONTAINER, typename T>
-	auto upper_bound( SRC_CONTAINER& container, const T& val ) -> decltype(begin(container))
+	auto upper_bound(SRC_CONTAINER& container, const T& val) -> decltype(begin(container))
 	{
-		return std::upper_bound( begin( container ), end( container ), val );
+		return std::upper_bound(begin(container), end(container), val);
 	}
 	template<typename SRC_CONTAINER, typename T, typename FUNC>
 	auto upper_bound(SRC_CONTAINER& container, const T& val, const FUNC& extract_value_functor) -> decltype(begin(container))
@@ -858,9 +858,9 @@ namespace alg
 	}
 
 	template<typename SRC_CONTAINER, typename T>
-	auto lower_bound( SRC_CONTAINER& container, const T& val ) -> decltype(begin(container))
+	auto lower_bound(SRC_CONTAINER& container, const T& val) -> decltype(begin(container))
 	{
-		return std::lower_bound( begin( container ), end( container ), val );
+		return std::lower_bound(begin(container), end(container), val);
 	}
 	template<typename SRC_CONTAINER, typename T, typename FUNC>
 	auto lower_bound(SRC_CONTAINER& container, const T& val, const FUNC& extract_value_functor) -> decltype(begin(container))
@@ -891,8 +891,8 @@ namespace alg
 	{
 		unsigned  result = 0;
 
-		for(typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
-			if(*p == element)
+		for (typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
+			if (*p == element)
 				++result;
 
 		return result;
@@ -903,21 +903,21 @@ namespace alg
 	{
 		unsigned  result = 0;
 
-		for(typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
-			if( functor(*p) )
+		for (typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
+			if (functor(*p))
 				++result;
 
 		return result;
 	}
 
 	template<typename SRC_CONTAINER>
-	auto sum(const SRC_CONTAINER& container) -> std::remove_reference_t<decltype( *std::begin(container) )>
+	auto sum(const SRC_CONTAINER& container) -> std::remove_reference_t<decltype(*std::begin(container))>
 	{
-		using result_type = decltype( *std::begin(container) );
+		using result_type = decltype(*std::begin(container));
 
 		std::remove_const_t<std::remove_reference_t<result_type>>  sum = {};
 
-		for(auto p = std::begin(container); p != std::end(container); ++p)
+		for (auto p = std::begin(container); p != std::end(container); ++p)
 			sum += *p;
 
 		return sum;
@@ -928,7 +928,7 @@ namespace alg
 	{
 		typename SRC_CONTAINER::value_type  mul = 1;
 
-		for(typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
+		for (typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
 			mul *= *p;
 
 		return mul;
@@ -940,7 +940,7 @@ namespace alg
 		typedef std::remove_const_t<std::remove_reference_t<decltype(functor(*container.begin()))>>  result_type;
 		result_type  sum = {};
 
-		for(typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
+		for (typename SRC_CONTAINER::const_iterator p = container.begin(); p != container.end(); ++p)
 			sum += functor(*p);
 
 		return sum;
@@ -961,13 +961,13 @@ namespace alg
 		struct Select1stIt
 		{
 			Select1stIt(CONT cont) : holder(std::forward<CONT>(cont)), begin_it(begin_adl(holder)), end_it(end_adl(holder)) {}
-			Select1stIt(IT begin_it, IT end_it) : begin_it( begin_it ), end_it( end_it ) {}
+			Select1stIt(IT begin_it, IT end_it) : begin_it(begin_it), end_it(end_it) {}
 
 			CONT holder;	//	to hold decaying container
 			IT begin_it;
 			IT end_it;
 
-			using value_type = std::remove_reference_t<decltype(begin_it->first)>;
+			using value_type = std::remove_reference_t<decltype((begin_it->first))>;
 
 			template<typename ItValueType>
 			struct iterator
@@ -996,10 +996,10 @@ namespace alg
 				IT base_iter() const { return it; }
 			};
 
-			auto begin()		{ return iterator<value_type>(begin_it); }
-			auto end()			{ return iterator<value_type>(end_it); }
-			auto begin() const	{ return iterator<const value_type>(begin_it); }
-			auto end() const	{ return iterator<const value_type>(end_it); }
+			auto begin() { return iterator<value_type>(begin_it); }
+			auto end() { return iterator<value_type>(end_it); }
+			auto begin() const { return iterator<const value_type>(begin_it); }
+			auto end() const { return iterator<const value_type>(end_it); }
 			size_t size() const { return std::distance(begin_it, end_it); }
 		};
 
@@ -1007,13 +1007,13 @@ namespace alg
 		struct Select2ndIt
 		{
 			Select2ndIt(CONT&& cont) : holder(std::forward<CONT>(cont)), begin_it(begin_adl(holder)), end_it(end_adl(holder)) {}
-			Select2ndIt(IT begin_it, IT end_it) : begin_it( begin_it ), end_it( end_it ) {}
+			Select2ndIt(IT begin_it, IT end_it) : begin_it(begin_it), end_it(end_it) {}
 
 			CONT holder;	//	to hold possibly decaying container
 			IT begin_it;
 			IT end_it;
 
-			using value_type = std::remove_reference_t<decltype(begin_it->second)>;
+			using value_type = std::remove_reference_t<decltype((begin_it->second))>;
 
 			template<typename ItValueType>
 			struct iterator
@@ -1041,11 +1041,11 @@ namespace alg
 
 				IT base_iter() const { return it; }
 			};
-			
-			auto begin()		{ return iterator<value_type>(begin_it); }
-			auto end()			{ return iterator<value_type>(end_it); }
-			auto begin() const	{ return iterator<const value_type>(begin_it); }
-			auto end() const	{ return iterator<const value_type>(end_it); }
+
+			auto begin() { return iterator<value_type>(begin_it); }
+			auto end() { return iterator<value_type>(end_it); }
+			auto begin() const { return iterator<const value_type>(begin_it); }
+			auto end() const { return iterator<const value_type>(end_it); }
 			size_t size() const { return std::distance(begin_it, end_it); }
 		};
 
@@ -1086,10 +1086,10 @@ namespace alg
 				cont_iterator_type base() { return it; }
 			};
 
-			auto begin()		{ return iterator<value_type>(cont.begin(), ptr); }
-			auto end()			{ return iterator<value_type>(cont.end(), ptr); }
-			auto begin() const	{ return iterator<const value_type>(cont.begin(), ptr); }
-			auto end() const	{ return iterator<const value_type>(cont.end(), ptr); }
+			auto begin() { return iterator<value_type>(cont.begin(), ptr); }
+			auto end() { return iterator<value_type>(cont.end(), ptr); }
+			auto begin() const { return iterator<const value_type>(cont.begin(), ptr); }
+			auto end() const { return iterator<const value_type>(cont.end(), ptr); }
 			size_t size() const { return std::distance(cont.begin(), cont.end()); }
 		};
 
@@ -1117,31 +1117,31 @@ namespace alg
 	{
 		//	For decaying container, CONT will be just CONT, and container will be moved into SelectMemberIt
 		//	For regular reference to container, CONT will be CONT& and reference will be stored instead
-		return details::SelectMemberIt<CONT, MEM_PTR>( std::forward<CONT>(cont), ptr);
+		return details::SelectMemberIt<CONT, MEM_PTR>(std::forward<CONT>(cont), ptr);
 	}
 
 	template<typename U, typename URBG>
 	unsigned random_choose(const U& weights, URBG& rnd)
 	{
-		assert( std::begin(weights) != std::end(weights) );
+		assert(std::begin(weights) != std::end(weights));
 		double sum = static_cast<float>(alg::sum(weights));
-		if( sum == 0 )
-			return rnd() % ( std::distance(std::begin(weights), std::end(weights)) );
+		if (sum == 0)
+			return rnd() % (std::distance(std::begin(weights), std::end(weights)));
 
 		double frand = rnd() / double(URBG::max());
 		double current_weight = 0;
 
 		unsigned idx = 0;
 		auto weights_it = std::begin(weights);
-		for( ; weights_it != std::end(weights); ++weights_it, ++idx)
+		for (; weights_it != std::end(weights); ++weights_it, ++idx)
 		{
 			current_weight += *weights_it / sum;
-			if(frand <= current_weight)
+			if (frand <= current_weight)
 				return idx;
 		}
 
 		assert(idx > 0);
-		return idx-1;
+		return idx - 1;
 	}
 
 	template<typename T, typename U, typename URBG>
@@ -1165,13 +1165,13 @@ namespace alg
 	}
 
 	template<typename V, typename A>
-	void  reverse(std::vector<V, A>&  cont)
+	void  reverse(std::vector<V, A>& cont)
 	{
 		std::reverse(cont.begin(), cont.end());
 	}
 
 	template<typename V, typename A>
-	void  reverse(std::list<V, A>&  cont)
+	void  reverse(std::list<V, A>& cont)
 	{
 		std::reverse(cont.begin(), cont.end());
 	}
@@ -1182,12 +1182,12 @@ namespace alg
 	{
 		typedef typename std::remove_cv<K>::type  IdxType;
 
-		if(m.empty())
+		if (m.empty())
 			return 0;
 
 		IdxType last_id = m.rbegin()->first;
 
-		if(last_id < std::numeric_limits<IdxType>::max())
+		if (last_id < std::numeric_limits<IdxType>::max())
 			return last_id + 1;
 
 		std::random_device rd;  // a seed source for the random number engine
@@ -1195,10 +1195,10 @@ namespace alg
 		std::uniform_int_distribution<IdxType> rnd;
 		IdxType i = std::numeric_limits<IdxType>::max();
 
-		while(i--)
+		while (i--)
 		{
 			IdxType id = rnd();
-			if( m.find(id) == m.end() )
+			if (m.find(id) == m.end())
 				return id;
 		}
 
